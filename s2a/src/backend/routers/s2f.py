@@ -778,12 +778,16 @@ async def pipeline_run_endpoint(req: PipelineRequest, db: Session = Depends(get_
 
     async def event_stream():
         try:
+            # If a custom LLM provider is configured, override client-provided model
+            # with the server's DEFAULT_LLM (the one the provider actually supports).
+            from config import DEFAULT_LLM, OPENAI_BASE_URL
+            effective_model = DEFAULT_LLM if OPENAI_BASE_URL else req.model
             async for event in run_pipeline(
                 regulatory_text=req.regulatory_text,
                 project_id=req.project_id,
                 schema_key=req.schema_key,
                 channels=req.channels,
-                model=req.model,
+                model=effective_model,
                 temperature=req.temperature,
                 max_corrections=req.max_corrections,
                 max_feature_retries=req.max_feature_retries,
