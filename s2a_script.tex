@@ -1,0 +1,285 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{enumitem, booktabs, xcolor, titlesec, fancyhdr}
+\usepackage{hyperref}
+
+\definecolor{accent}{HTML}{2563EB}
+\definecolor{demo}{HTML}{059669}
+\definecolor{note}{HTML}{9333EA}
+\definecolor{lgray}{HTML}{F3F4F6}
+
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\vspace{-0.3em}\color{accent}\hrule\vspace{0.5em}]
+\titleformat{\subsection}{\normalsize\bfseries\color{demo}}{}{0em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gray}S2A Presentation Script}
+\fancyhead[R]{\small\color{gray}March 2026}
+\fancyfoot[C]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+
+\newcommand{\note}[1]{\par{\small\color{note}\textit{[#1]}}\par}
+\newcommand{\timing}[1]{{\hfill\small\color{gray}#1}}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries S2A Presentation Script}\\[0.3em]
+  {\large Signal-to-Action: Agentic LLM Architecture for AML}\\[0.3em]
+  {\color{gray} $\sim$20 min: 10 min slides + 10 min live demo}
+\end{center}
+
+\vspace{1em}
+
+% ================================================================
+\section{Slide 1: Title \timing{30s}}
+% ================================================================
+
+Thanks everyone for coming. Today I'm presenting S2A---Signal-to-Action---which is an agentic LLM system that automates AML feature engineering.
+
+The idea is simple: you give it a piece of regulatory text, and 6 AI agents work together to turn it into an executable detection feature, run anomaly detection, and then verify each alert back against that same regulation. End to end, fully traceable.
+
+This refers back to the original ``Regulation In, Regulation Out'' paper from Phume---and what I'm showing today is a working system built around that architecture.
+
+% ================================================================
+\section{Slide 2: Current Operating Model \timing{2.5 min}}
+% ================================================================
+
+So why does this matter? Let's talk about how things work today.
+
+When a new piece of regulatory intel comes in---say a new FINTRAC document or a compliance guideline---there's a process we go through: signal intake, feature engineering, validation, and then model and alerting.
+
+What we'd like to improve is the middle part---feature engineering and validation. That's where most of the time and effort goes. Let me walk through why.
+
+First, reading and interpreting the regulation is manual work. It's slow, and it's subjective. Two analysts reading the same document can come up with completely different interpretations. And honestly, even if you just feed the text to an AI, you won't get the same output twice. We saw this firsthand during the MMA practicum project---three of us working on the same problem, and each of us came up with entirely different logic. One person suggested rolling windows, another wanted to use DWT, and the implementations were all different. When you come from different technical backgrounds, it's natural---but it also means it's hard to trace back why any particular approach was chosen.
+
+Second, the knowledge doesn't get preserved. Say someone builds a really strong feature for a specific typology---that feature could absolutely be reused in the future. But right now, there's no platform to store that intellectual progress. If the person who built it leaves the team, that knowledge is gone. And when a similar typology comes in next year, we're often starting from scratch.
+
+Third, validation usually happens late---at the model fitting stage. By that point, you've already spent weeks building something that might not work. And with AI-generated code today, you've also got package dependencies, environment setup, Spark access requirements---a lot of overhead before you even know if the feature is any good. So why not have a system that gives you a benchmark validation right after a new idea is created?
+
+And fourth---and this is the most important one---traceability. We want to be able to justify every step in this process. From reading the regulation, to generating the feature, to validating it, to detection, to alerting. Every step should be traceable and explainable. When someone asks ``why did you build this feature and why does it work this way?''---we should have a clear answer that traces all the way back to the regulatory source.
+
+So the question is: can we build a system that does all of this?
+
+% ================================================================
+\section{Slide 3: 6-Agent Pipeline Architecture \timing{2 min}}
+% ================================================================
+
+This is our answer. A 6-agent pipeline, where each agent has a specific job.
+
+Starting from the left: the Regulatory Analyst reads the text and extracts a structured indicator---what kind of suspicious behavior are we looking at. The Schema Adapter takes that indicator and figures out how to map it onto whatever database schema you're working with. The Feature Engineer generates the actual Python code.
+
+Then the Deterministic Validator---and this is the key agent. This one is NOT an LLM. It's pure deterministic code. Think of it as the quality control manager for the whole team. It checks safety, checks that the code actually works with your data columns, and runs statistical tests to see if the feature is any good. And here's the important part---if something is wrong, the Validator has the power to send any of the previous agents back to redo their work. If the code has issues, it sends the Engineer back to fix it. If the whole approach doesn't work, it can send it all the way back to the Analyst to rethink the indicator from scratch. We'll see this in detail on the Validator slide.
+
+After validation, Anomaly Detection runs Isolation Forest on the features. And finally, the RCC Verifier---Regulatory Consistency Checker---takes each flagged alert and checks it against the same regulatory text that started the whole process.
+
+Three design principles:
+
+One, every agent follows a Perceive-Reason-Act loop. At every step you can see: what did the agent observe, why did it make this decision, and what did it produce. Fully auditable.
+
+Two, we combine three different strengths. The regulation tells us what to look for---that's the domain knowledge. The LLM figures out how to compute it---that's the code generation. And Isolation Forest does the actual detection---that's the statistical modeling. In the literature this is called neuro-symbolic detection, but basically it means each part does what it's best at, instead of asking one LLM to do everything.
+
+Three, closed-loop grounding. The regulatory text isn't just used at the beginning and forgotten. It stays in context throughout the entire pipeline. Every step is verified against it. And at the very end, the same text is used again to verify the alerts. That's what ``Regulation In, Regulation Out'' means---the regulation is the source of truth from start to finish.
+
+% ================================================================
+\section{Slide 4: Regulation In --- Agents 1--3 \timing{1.5 min}}
+% ================================================================
+
+Let me walk through the first three agents in a bit more detail.
+
+Agent 1 is the Regulatory Analyst. You give it raw text---could be a FINTRAC document, a compliance guideline, anything---and it reads it and pulls out a structured indicator. It figures out what category of suspicious behavior this falls into---things like structuring, layering, geographic risk, velocity anomaly---we have about 20 categories defined. It also extracts specific parameters, like thresholds, and notes the regulatory basis for each one. So you get a computation plan that's grounded in the actual text.
+
+Agent 2 is the Schema Adapter. This is where it gets interesting. The same regulation might need to be applied to completely different data schemas. So this agent takes the indicator from Agent 1 and checks it against your actual database---column by column. For each data channel, it figures out: do we have a direct match for what we need? Do we need to use a proxy column? Or is it just not feasible with this data? This means the same piece of regulation can produce different code depending on what schema you're working with---and the system figures that out automatically.
+
+Agent 3 is the Feature Engineer. It takes the indicator and the schema mapping from the first two agents, and generates a Python function. What's nice is the code includes comments that trace back to the reasoning---so if you read the code later, you can see why each decision was made. The regulatory logic is right there in the comments.
+
+% ================================================================
+\section{Slide 5: Deterministic Validation --- Agent 4 \timing{1.5 min}}
+% ================================================================
+
+Now, Agent 4---the Deterministic Validator. I mentioned this earlier, but let me go deeper here because this is really the heart of the system.
+
+This agent is NOT an LLM. It's pure deterministic code. And that's a deliberate design choice. The idea is: LLMs are great at generating things, but you don't want an LLM checking its own homework. You want something deterministic, something that gives you the same answer every time.
+
+So what does it check? Three things.
+
+First, safety. We parse the generated code using AST---abstract syntax tree---and look for anything dangerous. Banned imports like \texttt{os}, \texttt{sys}, \texttt{subprocess}. Banned calls like \texttt{eval} or \texttt{exec}. Any file I/O or network access. If any of that is in there, it gets rejected immediately. This is a hard boundary---no exceptions.
+
+Second, column alignment. Now you might be thinking---didn't Agent 2, the Schema Adapter, already figure out which columns to use? Yes, but Agent 2 told the Engineer which columns are available. The problem is, LLMs don't always follow instructions. Agent 3 might write \texttt{df['Country']} with a capital C when the actual column is \texttt{country} lowercase. Or it might reference a column that doesn't exist at all. So the Validator checks what the code \textit{actually} references against the real schema. If something's missing, it offers options: find a similar column, rethink the approach, or skip.
+
+Third, statistical validation. Even if the code is safe and the columns exist, is the feature actually useful? We run two metrics---Information Value and KS statistic---to check whether the feature can actually distinguish between suspicious and normal accounts. If it can't---if IV is below 0.02---the feature is basically noise, and we trigger a feedback loop.
+
+Now, the feedback loops. For code-level issues---like a banned import or a wrong column name---the Validator automatically sends it back to the Engineer to fix. That can happen up to 5 times without any human involvement. Most code issues get resolved this way.
+
+But for the statistical check---if IV comes back below 0.02, meaning the feature has no predictive power---the system immediately brings the human in. It doesn't try to fix this automatically, because the problem might not be the code. Maybe the indicator itself doesn't work on this data. Maybe the approach needs a complete rethink. So you see the options on screen: Rethink Indicator, Rethink Code, Continue with Benchmarks, or Stop. And the options narrow each time, because things you've already tried get removed.
+
+% ================================================================
+\section{Slide 6: Statistical Metrics \timing{1 min}}
+% ================================================================
+
+Just a quick slide on the two metrics we use, since they come up in the demo.
+
+Information Value---or IV---tells us how well a feature separates suspicious accounts from normal ones. Think of it as: if I look at this feature, does it actually help me tell the difference? The key threshold we use is 0.02. Below that, the feature doesn't add any predictive value, and that's when we trigger the feedback loop to try a different approach.
+
+KS Statistic---Kolmogorov-Smirnov---is another way to measure the same idea. It looks at the distributions of the two groups and measures the maximum gap between them. Zero means the groups look identical, one means they're perfectly separated. We use both metrics together to get a more robust picture.
+
+One thing that's nice is these are computed per channel. So if a feature works well on card transactions but doesn't do much on wire transfers, the system shows you that breakdown. You're not just getting one number---you see how the feature performs across different data sources.
+
+\note{This slide is technical detail. If the audience is engaged, walk through the formula on the slide. If not, keep it to 30 seconds and move on.}
+
+% ================================================================
+\section{Slide 7: Detection \& RCC --- Agents 5--6 \timing{1.5 min}}
+% ================================================================
+
+Once we have validated features, Agent 5 runs the actual detection. We use Isolation Forest, which is an unsupervised anomaly detection method. The intuition is pretty simple: if someone's behavior is very different from everyone else's, it takes fewer random splits to separate them from the crowd. That's what makes them anomalous.
+
+We start with 10 benchmark features as a baseline---these are simple statistical features that don't need any regulatory knowledge. Things like total transaction amount, transaction count, standard deviation of amounts. Then on top of that, we add whatever regulation-compiled features the pipeline just produced. So we're testing whether the regulatory insight actually adds detection value beyond basic statistics.
+
+The model flags the top 15 accounts by anomaly score. And importantly---this is truly unsupervised. We don't use any labels for training. Labels are only used afterward to evaluate how well the model did---AUC-ROC, precision, recall. So the model is discovering patterns on its own.
+
+Now, Agent 6---the RCC Verifier---this is where ``Regulation Out'' happens, and it's what makes the whole system come full circle.
+
+For each flagged account, the RCC Verifier takes that customer's actual feature values and holds them up against the original regulatory text. And it produces a verdict: is this alert supported by the regulation, contradicted by it, or ambiguous? Along with a confidence level.
+
+But the best part is the evidence cards. Each card shows you: here's the customer's value for this feature, here's the population average for comparison, here's the specific regulatory criterion, and here's the exact quote from the regulation. So when an analyst looks at the alert, they don't just see ``this account is suspicious.'' They see exactly why, backed by the regulation itself.
+
+And that's the full loop. The regulation came in at the beginning and created the feature. Now at the end, the same regulation is verifying the alerts. Regulation in, regulation out.
+
+% ================================================================
+\section{Slide 7b: Regulatory Feature Specification \timing{1 min}}
+% ================================================================
+
+So now you've seen all six agents. The question is: what does the pipeline actually produce? What gets saved at the end?
+
+Everything I just walked through---the indicator, the schema mapping, the code, the reasoning, the validation results, the detection metrics, the RCC verdicts---it all gets saved together as what we call a Regulatory Feature Specification, or RFS.
+
+Think of the pipeline as a factory, and the RFS as the product. Every time the pipeline runs, it produces one of these. And each RFS has five parts:
+
+The behavior---what suspicious activity are we looking for. The data requirements---which columns and channels can support it. The function---the actual executable Python code. The provenance---the reasoning trail, with citations back to the regulatory text. And the validation evidence---did it pass safety checks, does it have statistical power, how did it perform in detection, and what did the RCC Verifier say about the alerts.
+
+The first four parts come from Agents 1 through 3---that's the definition side. The last part---validation evidence---comes from Agents 4 through 6. So the RFS captures the output of the entire pipeline, not just the first half.
+
+And here's why this matters: all of this gets stored in our database. So if a feature works well, you can save it to the Feature Library and reuse it the next time a similar typology comes in. That directly solves the knowledge preservation problem I mentioned earlier---good features are never lost.
+
+% ================================================================
+\section{Slide 8: Why Multi-Agent? \timing{1 min}}
+% ================================================================
+
+So a natural question is: why do you need 6 agents? Why not just give GPT the regulation and ask it to do everything in one shot?
+
+And honestly, you could. A single LLM can generate code from regulatory text. But here's what it can't do: it can't independently check its own work. It can't run deterministic safety checks. And when something goes wrong, you can't tell which part of the reasoning failed.
+
+With the multi-agent setup, each agent has a clear job, and there are deterministic boundaries between them. If the code fails validation, you know it's the Engineer's output that needs fixing---not the Analyst's interpretation. If the feature isn't predictive, you know the concept itself might need rethinking. You get pinpointed diagnosis instead of a black box.
+
+And the self-correction loops only work because the agents are separate. The Validator can independently reject the Engineer's code and send it back. You can't do that if generation and validation are in the same context window.
+
+So the way I think about it: the value of this system is not that it generates code. Any LLM can do that. The value is that it generates code that's been validated, that's auditable, and that can self-correct when things go wrong. That's the difference between a demo and something you could actually use.
+
+% ================================================================
+\section{Slide 9: Dataset \& Results \timing{1 min}}
+% ================================================================
+
+Quick overview of what we tested on.
+
+Our primary benchmark is IBM AML HI-Small---it's a well-known synthetic AML dataset from IBM. About 5 million transactions, half a million accounts, and about 3,400 of them are actually laundering. That's a 0.68\% positive rate, which is realistic for AML.
+
+We also ran the system on FINTRAC data---7 different channels, from card transactions to wire transfers. This was mainly to show the schema adaptation capability. Same regulation goes in, but the system produces different code for different data schemas. That's Agent 2 doing its job.
+
+The core question we're testing is: does a regulation-compiled feature actually help? Does it add anything on top of basic statistical features? With just the 10 benchmark features, we get a baseline AUC around 90\%. When we add a compiled feature on top---bringing it to 11 features---we see an improvement. I'll show you the actual numbers in the demo.
+
+On the practical side: the whole pipeline---from pasting in regulatory text to getting alerts with RCC verdicts---takes about 2 to 3 minutes. That's compared to what would normally take days or weeks. And every alert at the end is traceable back to the original regulation.
+
+% ================================================================
+\section{Slide 10: Live Demo \timing{$\sim$10 min}}
+% ================================================================
+
+Alright, let me switch over to the live system and show you how this actually works. I'll do two runs to show two different scenarios.
+
+\subsection{Run 1: Self-Correction Flow ($\sim$5 min)}
+
+\textbf{What you'll see:} The system tries, fails, diagnoses why, and recovers gracefully.
+
+\textbf{Input:} ``Iran is a high-risk country''
+
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.3em]
+  \item Open the project, paste the text, hit \textbf{Run Pipeline}
+  \item \textbf{Analyst tab} lights up---watch it extract a \texttt{geographic\_risk} indicator. Point out the PRA card: what it read, why it chose this category, the structured output
+  \item \textbf{Adapter tab}---it maps the indicator to the data schema, shows which channels can support it
+  \item \textbf{Engineer tab}---generates the Python function. Point out the PRA comments in the code
+  \item \textbf{Validator tab}---AST passes, code is safe, columns exist. But IV comes back as 0---Iran transactions are too rare in this dataset to be useful
+  \item \textbf{Decision point pops up}---``The system tried three agents, realized the feature doesn't have predictive power, and is asking me what to do next''
+  \item Choose \textbf{``Continue with Benchmarks''}---the pipeline falls back to using the 10 statistical features
+  \item \textbf{Detection tab}---Isolation Forest runs, shows AUC around 90\%
+  \item \textbf{RCC tab}---verdicts and evidence cards for the flagged accounts
+\end{enumerate}
+
+\note{Key message: ``The system doesn't crash or silently fail. It tries, figures out what went wrong, and gives you options. That's self-correction in practice.''}
+
+\note{While waiting for steps to complete, narrate what's happening: ``Right now the Validator is running the statistical evaluation---checking if this feature can actually separate suspicious accounts from normal ones...''}
+
+\subsection{Run 2: Full Pipeline Success ($\sim$5 min)}
+
+\textbf{What you'll see:} End-to-end success. Regulation In all the way to Regulation Out.
+
+\textbf{Input:} A real FINTRAC regulatory snippet about professional money laundering or structuring
+
+\begin{enumerate}[leftmargin=1.5em, itemsep=0.3em]
+  \item Paste the regulatory text, hit \textbf{Run Pipeline}
+  \item Walk through each tab as it lights up: Analyst reads the text, Adapter maps to schema, Engineer writes the code, Validator checks it
+  \item \textbf{This time, Validator passes}---the feature has real predictive power, IV is above the threshold
+  \item \textbf{Detection tab}---now running with 10 benchmark + 1 compiled = 11 features
+  \item \textbf{Compare with Run 1}---point out the AUC delta. The regulation-compiled feature added detection value
+  \item \textbf{RCC tab}---open an alert, show the verdict and evidence cards
+  \item Click into the evidence: ``Here's what this customer's value was, here's the average across all customers, and here's the exact text from the regulation that this maps to''
+\end{enumerate}
+
+\note{Key message: ``The regulation created the feature at the beginning. Now the same regulation is verifying the alert at the end. That's the full loop---Regulation In, Regulation Out.''}
+
+\subsection{After Demo: Next Steps}
+
+So where do we go from here? A few things on the roadmap.
+
+First, feature quality benchmarking. We want to do a proper comparison---S2A-compiled features versus what you'd get from a single GPT prompt versus what a human analyst would build. Not just ``does it work'' but how correct is it, how useful is it for detection, and how much of the typology landscape does it cover.
+
+Second, self-correction patterns. We're collecting data on when and why the pipeline fails. Which types of indicators are harder to compile? What are the common error patterns? How fast does it converge? We want to build an error taxonomy so we can make the system smarter over time.
+
+Third, typology coverage. We'd like to run the system across all FINTRAC typologies and map out the feature landscape. Where do we have good coverage? Where are the gaps?
+
+And longer term, we're thinking about an RL-optimized correction agent---one that learns the best correction strategies from the patterns we've already collected.
+
+The key thing is: each of these builds on top of what's already here. The pipeline is the foundation---it's not a one-off experiment, it's a platform we keep building on.
+
+Happy to take questions.
+
+% ================================================================
+\vspace{1.5em}
+\begin{center}
+\color{gray}\rule{0.6\textwidth}{0.4pt}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabular}{lc}
+  \toprule
+  \textbf{Section} & \textbf{Time} \\
+  \midrule
+  Slides 1--3 (Intro + Problem + Architecture) & $\sim$4.5 min \\
+  Slides 4--6 (Agent detail + Metrics) & $\sim$4 min \\
+  Slides 7--9 (Detection + Comparison + Results) & $\sim$3.5 min \\
+  Demo Run 1 (Self-correction) & $\sim$5 min \\
+  Demo Run 2 (Full pipeline) & $\sim$5 min \\
+  Next Steps + Q\&A & $\sim$3 min \\
+  \midrule
+  \textbf{Total} & \textbf{$\sim$25 min} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\note{If short on time: skip Slide 6 (metrics detail) and keep Demo Run 1 shorter by narrating the waiting parts. Can compress to $\sim$18 min.}
+
+\end{document}

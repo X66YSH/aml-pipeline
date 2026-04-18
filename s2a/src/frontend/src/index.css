@@ -1,0 +1,216 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-bg: #0B1120;
+  --color-bg-sidebar: #080d1a;
+  --color-bg-panel: rgba(30, 41, 59, 0.6);
+  --color-bg-card: rgba(30, 41, 59, 0.8);
+  --color-bg-code: #0d1117;
+  --color-border: rgba(148, 163, 184, 0.1);
+  --color-border-subtle: rgba(148, 163, 184, 0.05);
+
+  --color-accent-emerald: #10B981;
+  --color-accent-purple: #8B5CF6;
+  --color-accent-sky: #38BDF8;
+  --color-accent-amber: #F59E0B;
+  --color-accent-red: #EF4444;
+}
+
+/* ── Light theme: remap slate palette + custom vars ─────────────────────── */
+[data-theme="light"] {
+  /* Swap slate scale so dark-mode classes produce light-mode colors */
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-600: #94a3b8;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+
+  /* Override white → dark (used for text-white headings) */
+  --color-white: #0f172a;
+
+  /* Semantic overrides */
+  --color-bg: #f4f6f9;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-panel: rgba(255, 255, 255, 0.7);
+  --color-bg-card: rgba(255, 255, 255, 0.9);
+  --color-bg-code: #f1f5f9;
+  --color-border: rgba(100, 116, 139, 0.2);
+  --color-border-subtle: rgba(100, 116, 139, 0.1);
+
+  /* Black stays black (used for backdrop overlays) */
+  --color-black: #000000;
+
+  /* Stronger accent colors for light mode */
+  --color-sky-400: #0284c7;
+  --color-emerald-400: #059669;
+  --color-purple-400: #7c3aed;
+  --color-amber-400: #d97706;
+  --color-red-400: #dc2626;
+  --color-cyan-400: #0891b2;
+  --color-teal-400: #0d9488;
+
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: #F1F5F9;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+[data-theme="light"] body {
+  color: #1e293b;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass {
+  background: var(--color-bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.4); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  outline: none;
+}
+[data-theme="light"] input[type="range"] {
+  background: #cbd5e1;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #38BDF8;
+  cursor: pointer;
+}
+
+/* Line clamp utility */
+.line-clamp-6 {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Custom checkbox */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 4px;
+  border: 1.5px solid #475569;
+  background: #0f172a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+[data-theme="light"] input[type="checkbox"] {
+  border-color: #94a3b8;
+  background: #ffffff;
+}
+input[type="checkbox"]:hover {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.05);
+}
+input[type="checkbox"]:checked {
+  border-color: #8b5cf6;
+  background: #8b5cf6;
+}
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type="checkbox"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Select styling */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+/* Restore actual white inside colored backgrounds (buttons, badges, gradients) */
+[data-theme="light"] [class*="bg-gradient"],
+[data-theme="light"] [class*="bg-purple-6"],
+[data-theme="light"] [class*="bg-purple-5"],
+[data-theme="light"] [class*="bg-indigo-6"],
+[data-theme="light"] [class*="bg-indigo-5"],
+[data-theme="light"] [class*="bg-emerald-6"],
+[data-theme="light"] [class*="bg-emerald-5"],
+[data-theme="light"] [class*="bg-red-6"],
+[data-theme="light"] [class*="bg-red-5"],
+[data-theme="light"] [class*="bg-sky-6"],
+[data-theme="light"] [class*="bg-sky-5"] {
+  --color-white: #ffffff;
+}
+
+/* Prism code theme override for light mode */
+[data-theme="light"] pre[class*="language-"],
+[data-theme="light"] code[class*="language-"] {
+  color: #1e293b;
+  text-shadow: none;
+}
+[data-theme="light"] .token.comment,
+[data-theme="light"] .token.prolog,
+[data-theme="light"] .token.doctype,
+[data-theme="light"] .token.cdata { color: #64748b; }
+[data-theme="light"] .token.punctuation { color: #475569; }
+[data-theme="light"] .token.property,
+[data-theme="light"] .token.tag,
+[data-theme="light"] .token.boolean,
+[data-theme="light"] .token.number,
+[data-theme="light"] .token.constant,
+[data-theme="light"] .token.symbol { color: #9333ea; }
+[data-theme="light"] .token.selector,
+[data-theme="light"] .token.string,
+[data-theme="light"] .token.char,
+[data-theme="light"] .token.builtin { color: #059669; }
+[data-theme="light"] .token.keyword { color: #2563eb; }
+[data-theme="light"] .token.function { color: #c026d3; }
+
+/* Initiative cards need stronger colors in light mode */
+[data-theme="light"] [class*="text-rose-"] { --tw-text-opacity: 1; }
+[data-theme="light"] [class*="text-violet-"] { --tw-text-opacity: 1; }
+[data-theme="light"] [class*="text-teal-"] { --tw-text-opacity: 1; }

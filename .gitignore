@@ -1,0 +1,16 @@
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+.env
+data/
+uploads/
+runs/
+.venv/
+.claude/
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
