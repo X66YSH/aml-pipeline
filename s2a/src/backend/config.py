@@ -37,12 +37,17 @@ if _project_env.exists():
     load_dotenv(_project_env)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")  # empty = default OpenAI endpoint
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # LLM configuration
 # ---------------------------------------------------------------------------
-DEFAULT_LLM = "gpt-4o"
+# DEFAULT_LLM can be overridden via env var to use Groq / OpenRouter / etc.
+# Examples:
+#   OpenAI:       DEFAULT_LLM=gpt-4o
+#   Groq (free):  DEFAULT_LLM=llama-3.3-70b-versatile  + OPENAI_BASE_URL=https://api.groq.com/openai/v1
+DEFAULT_LLM = os.getenv("DEFAULT_LLM", "gpt-4o")
 LLM_TEMPERATURE = 0
 MAX_CORRECTION_ITERATIONS = 5
 MAX_OUTPUT_TOKENS = 4096

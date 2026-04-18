@@ -58,6 +58,7 @@ from config import (
     MAX_CORRECTION_ITERATIONS,
     MAX_OUTPUT_TOKENS,
     OPENAI_API_KEY,
+    OPENAI_BASE_URL,
 )
 from core.ontology import ALLOWED_OPERATIONS, CATEGORY_DESCRIPTIONS, IndicatorCategory
 from utils.trace_logger import TraceLogger
@@ -66,7 +67,10 @@ from utils.trace_logger import TraceLogger
 def _get_client() -> AsyncOpenAI:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not configured")
-    return AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=120.0)
+    kwargs = {"api_key": OPENAI_API_KEY, "timeout": 120.0}
+    if OPENAI_BASE_URL:
+        kwargs["base_url"] = OPENAI_BASE_URL
+    return AsyncOpenAI(**kwargs)
 
 
 def _build_ontology_reference() -> str:

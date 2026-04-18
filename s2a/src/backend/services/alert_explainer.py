@@ -12,13 +12,16 @@ import json
 
 from openai import AsyncOpenAI
 
-from config import DEFAULT_LLM, OPENAI_API_KEY
+from config import DEFAULT_LLM, OPENAI_API_KEY, OPENAI_BASE_URL
 
 
 def _get_client() -> AsyncOpenAI:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not configured")
-    return AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=120.0)
+    kwargs = {"api_key": OPENAI_API_KEY, "timeout": 120.0}
+    if OPENAI_BASE_URL:
+        kwargs["base_url"] = OPENAI_BASE_URL
+    return AsyncOpenAI(**kwargs)
 
 
 RCC_SYSTEM = """You are an RCC (Regulatory Consistency Checker) Verifier for AML detection.

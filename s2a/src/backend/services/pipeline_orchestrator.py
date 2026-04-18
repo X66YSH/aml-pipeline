@@ -369,11 +369,14 @@ async def run_pipeline(
 
         # Diagnostic Agent LLM call
         from openai import AsyncOpenAI
-        from config import OPENAI_API_KEY
+        from config import OPENAI_API_KEY, OPENAI_BASE_URL
 
         diagnostic = {"root_cause": "engineer", "reasoning": "Unable to determine root cause.", "recommendation": "Try a different computation approach."}
         try:
-            diag_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+            _diag_kwargs = {"api_key": OPENAI_API_KEY}
+            if OPENAI_BASE_URL:
+                _diag_kwargs["base_url"] = OPENAI_BASE_URL
+            diag_client = AsyncOpenAI(**_diag_kwargs)
             diag_prompt = f"""You are a Diagnostic Agent for an AML detection pipeline.
 
 A compiled feature has LOW predictive power (IV < 0.02). Analyze the root cause.
