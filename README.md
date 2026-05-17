@@ -197,7 +197,7 @@ These establish a baseline. Regulation-compiled features are added on top to mea
 - Python 3.13+
 - Node.js 18+
 - OpenAI API key (GPT-4o)
-- IBM AML CSV dataset (place in `data/ibm_aml.csv`)
+- AML datasets in `data/` — see [Data Access](#data-access) below
 
 ### Setup
 
@@ -209,8 +209,7 @@ cd aml-pipeline
 # 2. Add your OpenAI API key to .env at the project root
 echo "OPENAI_API_KEY=sk-..." > .env
 
-# 3. Place IBM AML data at data/ibm_aml.csv
-# (download from Kaggle: ealtman2019/ibm-transactions-for-anti-money-laundering-aml)
+# 3. Fetch the datasets (see Data Access below)
 
 # 4. Start everything
 ./start.sh
@@ -219,6 +218,28 @@ echo "OPENAI_API_KEY=sk-..." > .env
 The script installs dependencies, starts the FastAPI backend on `:8080` and the Vite frontend on `:5173`.
 
 Open **http://localhost:5173** in your browser.
+
+### Data Access
+
+The full dataset (~2.5 GB, 13 CSV files) is tracked with [DVC](https://dvc.org/) and stored in a private Cloudflare R2 bucket. The git repo only contains lightweight `.dvc` pointer files under `data/`.
+
+**Collaborators** (with R2 credentials provided out-of-band):
+
+```bash
+# Install DVC with S3 support (R2 uses the S3-compatible API)
+pip install 'dvc[s3]'
+
+# One-time: write the access keys to .dvc/config.local (not committed to git)
+dvc remote modify --local r2 access_key_id <ACCESS_KEY_ID>
+dvc remote modify --local r2 secret_access_key <SECRET_ACCESS_KEY>
+
+# Pull all data (downloads ~2.5 GB into data/)
+dvc pull
+```
+
+After this, `data/` contains all 13 CSVs and the app is ready to run. Future updates: `git pull && dvc pull`.
+
+**Public users** (no R2 credentials): download IBM AML from Kaggle directly — [ealtman2019/ibm-transactions-for-anti-money-laundering-aml](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml) — and place the merged file at `data/ibm_aml.csv`. The FINTRAC channel data is not publicly redistributable.
 
 ### Manual Setup (if `start.sh` doesn't work)
 

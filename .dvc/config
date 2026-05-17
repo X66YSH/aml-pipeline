@@ -1,0 +1,5 @@
+[core]
+    remote = r2
+['remote "r2"']
+    url = s3://aml-pipeline-data
+    endpointurl = https://6596eaa3e46f994743325c833dce1ff8.r2.cloudflarestorage.com

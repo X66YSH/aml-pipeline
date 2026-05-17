@@ -1,0 +1,5 @@
+outs:
+- md5: 24c02106fdc108115b684c12f34223af
+  size: 12558384
+  hash: md5
+  path: cheque.csv

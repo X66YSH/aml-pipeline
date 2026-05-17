@@ -1,0 +1,5 @@
+outs:
+- md5: 7e6a8e19648de6ef806f6e58a8738286
+  size: 268167
+  hash: md5
+  path: wire.csv

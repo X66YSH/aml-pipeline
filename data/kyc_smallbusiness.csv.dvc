@@ -1,0 +1,5 @@
+outs:
+- md5: 5b75817b634f8cc451fd3620320a250c
+  size: 540325
+  hash: md5
+  path: kyc_smallbusiness.csv

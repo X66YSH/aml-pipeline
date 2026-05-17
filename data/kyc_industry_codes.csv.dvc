@@ -1,0 +1,5 @@
+outs:
+- md5: f3eb587da9bc7e4586bc6ff378511fd6
+  size: 6105
+  hash: md5
+  path: kyc_industry_codes.csv

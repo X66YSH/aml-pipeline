@@ -1,0 +1,5 @@
+outs:
+- md5: 14814b899d674e0d767a946722ff21fc
+  size: 4268
+  hash: md5
+  path: kyc_occupation_codes.csv
