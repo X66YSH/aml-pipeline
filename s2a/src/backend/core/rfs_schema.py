@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from config import LLM_MODEL
+
 
 class IndicatorSpec(BaseModel):
     """The regulatory indicator that motivated this feature."""
@@ -101,7 +103,7 @@ class RegulatoryFeatureSpec(BaseModel):
     provenance: ProvenanceRecord
     parameters: list[ParameterSpec] = Field(default_factory=list)
     validation: ValidationResult = Field(default_factory=ValidationResult)
-    compilation_model: str = Field(default="gpt-4o", description="LLM used for compilation")
+    compilation_model: str = Field(default=LLM_MODEL, description="LLM used for compilation")
     compilation_timestamp: datetime = Field(default_factory=datetime.utcnow)
     target_schema: str = Field(description="Dataset schema (e.g., 'saml_d', 'ibm_aml')")
 

@@ -1,19 +1,18 @@
 /**
  * PipelineTabBar -- horizontal tab bar acting as a pipeline progress indicator.
  *
- * 6 tabs representing the paper's multi-agent architecture:
- * Analyst -> Adapter -> Engineer -> Validator -> Detection -> RCC
+ * 7 tabs: Analyst -> Adapter -> Engineer -> Validator -> Detection -> RCC -> Dashboard Builder
  */
 
 import { motion } from 'framer-motion';
 import {
   FileSearch, Layers, Code2, ShieldCheck, BarChart3, Shield,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, LayoutDashboard,
 } from 'lucide-react';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export type PipelineTab = 'analyst' | 'adapter' | 'engineer' | 'validator' | 'detection' | 'rcc';
+export type PipelineTab = 'analyst' | 'adapter' | 'engineer' | 'validator' | 'detection' | 'rcc' | 'dashboard';
 export type PipelinePhase = 'idle' | PipelineTab | 'done';
 export type PhaseStatus = 'idle' | 'active' | 'done' | 'error';
 
@@ -26,6 +25,7 @@ const TABS: { key: PipelineTab; label: string; icon: typeof FileSearch; sublabel
   { key: 'validator', label: 'Validator', icon: ShieldCheck, sublabel: 'Deterministic Validator',  color: 'emerald', ring: '#34d399' },
   { key: 'detection', label: 'Detection', icon: BarChart3,   sublabel: 'Anomaly Detection',       color: 'amber',  ring: '#fbbf24' },
   { key: 'rcc',       label: 'RCC',       icon: Shield,      sublabel: 'Regulatory Consistency',  color: 'rose',   ring: '#fb7185' },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, sublabel: 'Dashboard Builder', color: 'indigo', ring: '#818cf8' },
 ];
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -33,21 +33,25 @@ const TABS: { key: PipelineTab; label: string; icon: typeof FileSearch; sublabel
 const textColor: Record<string, string> = {
   purple: 'text-purple-300', teal: 'text-teal-300', sky: 'text-sky-300',
   emerald: 'text-emerald-300', amber: 'text-amber-300', rose: 'text-rose-300',
+  indigo: 'text-indigo-300',
 };
 
 const bgColor: Record<string, string> = {
   purple: 'bg-purple-500/10', teal: 'bg-teal-500/10', sky: 'bg-sky-500/10',
   emerald: 'bg-emerald-500/10', amber: 'bg-amber-500/10', rose: 'bg-rose-500/10',
+  indigo: 'bg-indigo-500/10',
 };
 
 const borderColor: Record<string, string> = {
   purple: 'border-purple-500/50', teal: 'border-teal-500/50', sky: 'border-sky-500/50',
   emerald: 'border-emerald-500/50', amber: 'border-amber-500/50', rose: 'border-rose-500/50',
+  indigo: 'border-indigo-500/50',
 };
 
 const glowColor: Record<string, string> = {
   purple: 'rgba(168,85,247,0.35)', teal: 'rgba(20,184,166,0.35)', sky: 'rgba(56,189,248,0.35)',
   emerald: 'rgba(52,211,153,0.35)', amber: 'rgba(251,191,36,0.35)', rose: 'rgba(251,113,133,0.35)',
+  indigo: 'rgba(129,140,248,0.35)',
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────

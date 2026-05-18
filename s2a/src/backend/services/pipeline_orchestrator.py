@@ -1,10 +1,11 @@
 """Pipeline Orchestrator — end-to-end multi-agent AML pipeline.
 
-Coordinates 6 agents across 4 phases:
+Coordinates 6 pipeline agents plus an optional Dashboard Builder across phases:
   Phase 1 (Feature Studio): Regulatory Analyst → Schema Adapter → Feature Engineer → Validator
   Phase 2 (Feature Validation): Statistical Evaluator (feedback loop to Phase 1 if IV too low)
   Phase 3 (Detection Lab): Detection Strategist
   Phase 4 (Alerts): RCC Verifier (Alert Analyst)
+  Phase 5 (Dashboard): Dashboard Builder — caches run artifacts and plans a visualization layout
 
 Yields SSE events for real-time visualization of the pipeline.
 """
@@ -368,12 +369,19 @@ async def run_pipeline(
                 )
 
         # Diagnostic Agent LLM call
+        import httpx
         from openai import AsyncOpenAI
-        from config import OPENAI_API_KEY, OPENAI_BASE_URL
+        from config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_TIMEOUT_CONNECT, OPENAI_TIMEOUT_READ
 
         diagnostic = {"root_cause": "engineer", "reasoning": "Unable to determine root cause.", "recommendation": "Try a different computation approach."}
         try:
-            _diag_kwargs = {"api_key": OPENAI_API_KEY}
+            _to = httpx.Timeout(
+                connect=OPENAI_TIMEOUT_CONNECT,
+                read=OPENAI_TIMEOUT_READ,
+                write=OPENAI_TIMEOUT_READ,
+                pool=OPENAI_TIMEOUT_CONNECT,
+            )
+            _diag_kwargs: dict = {"api_key": OPENAI_API_KEY, "timeout": _to, "max_retries": 1}
             if OPENAI_BASE_URL:
                 _diag_kwargs["base_url"] = OPENAI_BASE_URL
             diag_client = AsyncOpenAI(**_diag_kwargs)
@@ -753,6 +761,39 @@ Respond in JSON:
 
     yield _phase_event("rcc", "done",
         f"Generated {alert_count} alerts, {verified_count} verified by RCC")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PHASE 5: Dashboard Builder (cache + LLM layout, isolated from core pipeline)
+    # ════════════════════════════════════════════════════════════════════════
+    yield _phase_event("dashboard", "starting", "Dashboard Builder: caching run artifacts and planning layout…")
+    try:
+        from services.dashboard_agent import run_dashboard_phase
+
+        async for _dbe in run_dashboard_phase(
+            project_id=project_id,
+            schema_key=schema_key,
+            regulatory_text=regulatory_text,
+            indicator=indicator,
+            feature_name=feature_name,
+            compatible_channels=compatible_channels,
+            channel_results=channel_results,
+            detect_result=detect_result,
+            best_model=best_model,
+            best_channel=best_channel,
+            best_auc=best_auc,
+            max_iv=max_iv,
+            best_eval_channel=best_eval_channel,
+            alert_count=alert_count,
+            verified_count=verified_count,
+            run_id=run_id,
+            db=db,
+            model=model,
+            temperature=temperature,
+        ):
+            yield _dbe
+        yield _phase_event("dashboard", "done", "Dashboard Builder: layout saved for this project")
+    except Exception as _dash_err:
+        yield _phase_event("dashboard", "error", f"Dashboard Builder skipped: {str(_dash_err)[:160]}")
 
     # ════════════════════════════════════════════════════════════════════════
     # PIPELINE COMPLETE
