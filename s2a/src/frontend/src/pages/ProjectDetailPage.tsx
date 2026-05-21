@@ -10,7 +10,7 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-python';
 import 'prismjs/themes/prism-tomorrow.css';
 import {
-  getProject, listFeaturesByProject, createFeature, deleteFeature,
+  getProject, getProjectDashboard, listFeaturesByProject, createFeature, deleteFeature,
   uploadPDF, listAlerts, getAlertStats, updateAlertFeedback, explainAlert,
   pipelineStream,
   submitPipelineDecision,
@@ -23,6 +23,7 @@ import type {
   AlertRecord, AlertStats, FeatureValidationResult,
   PerceiveData, ValidationData, SchemaAdaptData, TraceEvent,
   PRAData, PipelineDecisionRequired, IterationTrace,
+  DashboardBundle,
 } from '../api/client';
 import FeatureEditorModal from '../components/s2f/FeatureEditorModal';
 import FeatureLibrary from '../components/pipeline/FeatureLibrary';
@@ -34,6 +35,7 @@ import EngineerTab from '../components/pipeline/EngineerTab';
 import ValidatorTab from '../components/pipeline/ValidatorTab';
 import DetectionTab from '../components/pipeline/DetectionTab';
 import RCCTab from '../components/pipeline/RCCTab';
+import DashboardTab from '../components/pipeline/DashboardTab';
 
 // ─── Helper: Status badge ────────────────────────────────────────────────────
 
@@ -151,7 +153,7 @@ export default function ProjectDetailPage() {
   // No auto-switch: pipeline progresses but user stays on current tab
   const [phaseStatuses, setPhaseStatuses] = useState<Record<PipelineTab, PhaseStatus>>({
     analyst: 'idle', adapter: 'idle', engineer: 'idle',
-    validator: 'idle', detection: 'idle', rcc: 'idle',
+    validator: 'idle', detection: 'idle', rcc: 'idle', dashboard: 'idle',
   });
   const [agentMessages, setAgentMessages] = useState<{ from: string; to: string; message: string }[]>([]);
 
@@ -169,6 +171,7 @@ export default function ProjectDetailPage() {
     alertCount: number; verifiedCount: number; featureName?: string;
     bestModel?: string; bestAuc?: number;
   } | null>(null);
+  const [dashboardBundle, setDashboardBundle] = useState<DashboardBundle | null>(null);
 
   // ── Pipeline decision state ──────────────────────────────────────────
   const [pendingDecision, setPendingDecision] = useState<PipelineDecisionRequired | null>(null);
@@ -225,6 +228,11 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!id) return;
+    getProjectDashboard(id).then(setDashboardBundle).catch(() => setDashboardBundle(null));
+  }, [id]);
 
   // ── Load alerts ───────────────────────────────────────────────────────────
 
@@ -368,7 +376,7 @@ export default function ProjectDetailPage() {
     // Pipeline starts on analyst tab
     setPhaseStatuses({
       analyst: 'active', adapter: 'idle', engineer: 'idle',
-      validator: 'idle', detection: 'idle', rcc: 'idle',
+      validator: 'idle', detection: 'idle', rcc: 'idle', dashboard: 'idle',
     });
     setTraceEvents([]);
     setPerceiveData(null);
@@ -380,6 +388,7 @@ export default function ProjectDetailPage() {
     setDetectResult(null);
     setAgentMessages([]);
     setPipelineSummary(null);
+    setDashboardBundle(null);
     setPendingDecision(null);
     setIterationHistory([]);
     setAlerts([]);
@@ -410,17 +419,37 @@ export default function ProjectDetailPage() {
             setTraceEvents(prev => [...prev, data as unknown as TraceEvent]);
             setLatestTraceMessage((data as any).message || '');
           }
+          // Top-level pipeline / OpenAI errors (SSE from backend exception handler)
+          else if (eventType === 'error') {
+            const msg = String((data as { message?: string })?.message || 'Pipeline error');
+            setTraceEvents((prev) => {
+              const lastT = prev.length ? prev[prev.length - 1].timestamp : 0;
+              return [
+                ...prev,
+                {
+                  timestamp: lastT + 0.01,
+                  level: 'error',
+                  agent: 'Pipeline',
+                  message: msg,
+                  data: (data || {}) as Record<string, unknown>,
+                } as TraceEvent,
+              ];
+            });
+            setLatestTraceMessage(msg);
+            setPhaseStatuses((prev) => ({ ...prev, analyst: 'error' }));
+          }
           // Phase changes -> update tab status + auto-switch
           else if (eventType === 'phase_change') {
             const { phase, status } = data as { phase: string; status: string };
             const phaseToTab: Record<string, PipelineTab> = {
               analyst: 'analyst', adapter: 'adapter', engineer: 'engineer',
               validator: 'validator', detection: 'detection', rcc: 'rcc',
+              dashboard: 'dashboard',
             };
             const tab = phaseToTab[phase];
             if (tab) {
               if (status === 'starting' || status === 'active') {
-                const TAB_ORDER: PipelineTab[] = ['analyst', 'adapter', 'engineer', 'validator', 'detection', 'rcc'];
+                const TAB_ORDER: PipelineTab[] = ['analyst', 'adapter', 'engineer', 'validator', 'detection', 'rcc', 'dashboard'];
                 setPipelinePhase(tab);
                 setPhaseStatuses(prev => {
                   const next = { ...prev, [tab]: 'active' as PhaseStatus };
@@ -498,6 +527,9 @@ export default function ProjectDetailPage() {
           else if (eventType === 'iteration_trace') {
             setIterationHistory(prev => [...prev, data as IterationTrace]);
           }
+          else if (eventType === 'dashboard_spec') {
+            setDashboardBundle(data as unknown as DashboardBundle);
+          }
           // Pipeline complete
           else if (eventType === 'pipeline_complete') {
             const summary = (data as any).summary || {};
@@ -512,6 +544,9 @@ export default function ProjectDetailPage() {
             // Reload features and alerts
             loadFeatures();
             loadAlerts();
+            if (id) {
+              getProjectDashboard(id).then(setDashboardBundle).catch(() => {});
+            }
           }
         },
       );
@@ -633,7 +668,7 @@ export default function ProjectDetailPage() {
                 onRunPipeline={handleRunPipeline}
                 pipelineRunning={pipelineRunning}
                 perceiveData={perceiveData}
-                traceEvents={traceEvents.filter(t => t.agent === 'Feature Engineer' && t.message?.includes('PERCEIVE'))}
+                traceEvents={traceEvents.filter(t => t.agent === 'Feature Engineer')}
                 pra={analystPRA}
               />
 
@@ -732,6 +767,11 @@ export default function ProjectDetailPage() {
                 traceEvents={traceEvents}
                 pra={analystPRA}
               />
+            </motion.div>
+          )}
+          {activeTab === 'dashboard' && (
+            <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <DashboardTab bundle={dashboardBundle} pipelineRunning={pipelineRunning} />
             </motion.div>
           )}
         </AnimatePresence>

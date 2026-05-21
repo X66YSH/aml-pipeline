@@ -10,6 +10,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.database import Base
+from config import LLM_MODEL
 
 
 def _now() -> datetime:
@@ -29,7 +30,7 @@ class Project(Base):
     # Schema: "fintrac" (7-channel Canadian banking) or "ibm_aml" (dual-table synthetic benchmark)
     schema_key: Mapped[str] = mapped_column(String, default="fintrac")
     # Per-project LLM settings
-    llm_model: Mapped[str] = mapped_column(String, default="gpt-4o")
+    llm_model: Mapped[str] = mapped_column(String, default=LLM_MODEL)
     temperature: Mapped[float] = mapped_column(Float, default=0.0)
     max_corrections: Mapped[int] = mapped_column(Integer, default=5)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

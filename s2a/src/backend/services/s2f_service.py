@@ -13,6 +13,7 @@ import json
 import re
 from typing import AsyncGenerator
 
+import httpx
 from openai import AsyncOpenAI
 
 # ── Pipeline decision system ──────────────────────────────────────────────────
@@ -59,6 +60,8 @@ from config import (
     MAX_OUTPUT_TOKENS,
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
+    OPENAI_TIMEOUT_CONNECT,
+    OPENAI_TIMEOUT_READ,
 )
 from core.ontology import ALLOWED_OPERATIONS, CATEGORY_DESCRIPTIONS, IndicatorCategory
 from utils.trace_logger import TraceLogger
@@ -67,7 +70,13 @@ from utils.trace_logger import TraceLogger
 def _get_client() -> AsyncOpenAI:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not configured")
-    kwargs = {"api_key": OPENAI_API_KEY, "timeout": 120.0}
+    timeout = httpx.Timeout(
+        connect=OPENAI_TIMEOUT_CONNECT,
+        read=OPENAI_TIMEOUT_READ,
+        write=OPENAI_TIMEOUT_READ,
+        pool=OPENAI_TIMEOUT_CONNECT,
+    )
+    kwargs: dict = {"api_key": OPENAI_API_KEY, "timeout": timeout, "max_retries": 1}
     if OPENAI_BASE_URL:
         kwargs["base_url"] = OPENAI_BASE_URL
     return AsyncOpenAI(**kwargs)
@@ -298,15 +307,22 @@ async def compile_feature(
         trace.info("Feature Engineer", f"Calling {model} — extracting indicators and parameters...")
         yield {"event": "trace", "data": trace.events[-1].to_dict()}
 
-        perceive_response = await client.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=MAX_OUTPUT_TOKENS,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": perceive_prompt},
-            ],
-        )
+        try:
+            perceive_response = await client.chat.completions.create(
+                model=model,
+                temperature=temperature,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": perceive_prompt},
+                ],
+            )
+        except Exception as e:
+            err_msg = f"{type(e).__name__}: {str(e)[:800]}"
+            trace.error("Feature Engineer", f"PERCEIVE LLM call failed — {err_msg}")
+            yield {"event": "trace", "data": trace.events[-1].to_dict()}
+            raise RuntimeError(f"PERCEIVE failed: {err_msg}") from e
+
         perceive_raw = perceive_response.choices[0].message.content
 
         perceive_data = _extract_json(perceive_raw)

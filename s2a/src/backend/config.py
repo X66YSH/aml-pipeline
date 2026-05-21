@@ -19,6 +19,10 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 RUNS_DIR = APP_ROOT / "runs"
 RUNS_DIR.mkdir(exist_ok=True)
 
+# Per-project dashboard cache (Dashboard Builder agent)
+DASHBOARD_CACHE_DIR = RUNS_DIR / "dashboard_cache"
+DASHBOARD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 # FINTRAC channel data paths
 CHANNEL_DATA_DIR = PROJECT_ROOT / "data"
 
@@ -38,7 +42,11 @@ if _project_env.exists():
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")  # empty = default OpenAI endpoint
+# Long schema + 5k regulatory text can exceed a short read timeout; tune via .env if needed.
+OPENAI_TIMEOUT_CONNECT = float(os.getenv("OPENAI_TIMEOUT_CONNECT", "30"))
+OPENAI_TIMEOUT_READ = float(os.getenv("OPENAI_TIMEOUT_READ", "300"))
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")  # Default to gpt-4o if not set
 
 # ---------------------------------------------------------------------------
 # LLM configuration

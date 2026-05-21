@@ -65,6 +65,7 @@ export interface PerceiveData {
     default?: number | string;
     unit?: string;
     rationale?: string;
+    regulatory_basis?: string;
   }>;
   computation_plan: {
     operation?: string;
@@ -201,12 +202,29 @@ export interface ProjectRecord {
   updatedAt: string;
 }
 
+/** Cached dashboard bundle (Dashboard Builder agent) — material is bindable metrics/series/tables; spec is LLM layout. */
+export interface DashboardBundle {
+  updated_at?: string;
+  material: Record<string, unknown>;
+  spec: {
+    dashboard_title?: string;
+    dashboard_subtitle?: string;
+    layout_rationale?: string;
+    widgets?: Array<Record<string, unknown>>;
+  };
+  pra?: { perceive: string; reason: string; act?: string };
+}
+
 export async function listProjects(): Promise<ProjectRecord[]> {
   return fetchJSON<ProjectRecord[]>('/projects');
 }
 
 export async function getProject(id: string): Promise<ProjectRecord> {
   return fetchJSON<ProjectRecord>(`/projects/${id}`);
+}
+
+export async function getProjectDashboard(projectId: string): Promise<DashboardBundle> {
+  return fetchJSON<DashboardBundle>(`/projects/${projectId}/dashboard`);
 }
 
 export async function createProject(body: { name: string; description?: string; schema_key?: string }): Promise<ProjectRecord> {

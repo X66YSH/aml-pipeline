@@ -197,9 +197,9 @@ export default function AnalystTab({
                               &ldquo;{param.ambiguous_term}&rdquo;
                             </p>
                           )}
-                          {(param as Record<string, unknown>).regulatory_basis && (
+                          {param.regulatory_basis && (
                             <p className="text-[10px] text-amber-400/70 leading-relaxed">
-                              {String((param as Record<string, unknown>).regulatory_basis)}
+                              {param.regulatory_basis}
                             </p>
                           )}
                           {param.rationale && (
@@ -298,7 +298,7 @@ export default function AnalystTab({
                   {traceEvents.map((evt, i) => (
                     <div key={i} className="flex items-start gap-2 text-[10px]">
                       <span className="text-slate-600 font-mono shrink-0 w-16 text-right">
-                        {new Date(evt.timestamp * 1000).toLocaleTimeString()}
+                        {evt.timestamp.toFixed(1) + 's'}
                       </span>
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[9px] font-medium uppercase ${
                         evt.level === 'error' ? 'bg-red-500/10 text-red-400' :

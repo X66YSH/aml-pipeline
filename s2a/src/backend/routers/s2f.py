@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from core.database import get_db
+from config import LLM_MODEL
 from models.feature import Alert, DetectionRun, Feature
 
 from config import (
@@ -327,7 +328,7 @@ class CompileRequest(BaseModel):
     schema_key: str = "ibm_aml"
     channels: list[str] | None = None
     upload_id: Optional[str] = None
-    model: str = "gpt-4o"
+    model: str = LLM_MODEL
     temperature: float = 0.0
     max_corrections: int = 5
 
@@ -760,7 +761,7 @@ class PipelineRequest(BaseModel):
     project_id: str
     schema_key: str = "fintrac"
     channels: list[str] | None = None
-    model: str = "gpt-4o"
+    model: str = LLM_MODEL
     temperature: float = 0.0
     max_corrections: int = 5
     max_feature_retries: int = 2

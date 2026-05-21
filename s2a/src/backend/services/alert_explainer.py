@@ -10,15 +10,22 @@ regulatory citations + confidence assessment.
 
 import json
 
+import httpx
 from openai import AsyncOpenAI
 
-from config import DEFAULT_LLM, OPENAI_API_KEY, OPENAI_BASE_URL
+from config import DEFAULT_LLM, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_TIMEOUT_CONNECT, OPENAI_TIMEOUT_READ
 
 
 def _get_client() -> AsyncOpenAI:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not configured")
-    kwargs = {"api_key": OPENAI_API_KEY, "timeout": 120.0}
+    timeout = httpx.Timeout(
+        connect=OPENAI_TIMEOUT_CONNECT,
+        read=OPENAI_TIMEOUT_READ,
+        write=OPENAI_TIMEOUT_READ,
+        pool=OPENAI_TIMEOUT_CONNECT,
+    )
+    kwargs: dict = {"api_key": OPENAI_API_KEY, "timeout": timeout, "max_retries": 1}
     if OPENAI_BASE_URL:
         kwargs["base_url"] = OPENAI_BASE_URL
     return AsyncOpenAI(**kwargs)
