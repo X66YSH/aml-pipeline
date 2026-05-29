@@ -23,8 +23,9 @@ import type {
   AlertRecord, AlertStats, FeatureValidationResult,
   PerceiveData, ValidationData, SchemaAdaptData, TraceEvent,
   PRAData, PipelineDecisionRequired, IterationTrace,
-  DashboardBundle,
+  DashboardBundle, FeatureGateSummary,
 } from '../api/client';
+import { useSettings } from '../hooks/useSettings';
 import FeatureEditorModal from '../components/s2f/FeatureEditorModal';
 import FeatureLibrary from '../components/pipeline/FeatureLibrary';
 import PipelineTabBar from '../components/pipeline/PipelineTabBar';
@@ -139,6 +140,7 @@ export default function ProjectDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { settings } = useSettings();
   const incomingText = (location.state as { regulatoryText?: string } | null)?.regulatoryText;
 
   // ── Project & features state ──────────────────────────────────────────────
@@ -165,7 +167,14 @@ export default function ProjectDetailPage() {
   const [codeHistory, setCodeHistory] = useState<Map<number, string>>(new Map());
   const [validationData, setValidationData] = useState<ValidationData | null>(null);
   const [schemaAdaptData, setSchemaAdaptData] = useState<SchemaAdaptData | null>(null);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(['eft']);
+  const [useMultiFeature, setUseMultiFeature] = useState(false);
+  const [multiFeatureFallback, setMultiFeatureFallback] = useState<string | null>(null);
   const [featureEvalData, setFeatureEvalData] = useState<FeatureValidationResult | null>(null);
+  const [allFeatureEvals, setAllFeatureEvals] = useState<
+    { candidateIndex: number; featureName: string; evalData: any }[]
+  >([]);
+  const [featureGateSummary, setFeatureGateSummary] = useState<FeatureGateSummary | null>(null);
   const [detectResult, setDetectResult] = useState<DetectResponse | null>(null);
   const [pipelineSummary, setPipelineSummary] = useState<{
     alertCount: number; verifiedCount: number; featureName?: string;
@@ -385,6 +394,8 @@ export default function ProjectDetailPage() {
     setCodeHistory(new Map());
     setValidationData(null);
     setFeatureEvalData(null);
+    setAllFeatureEvals([]);
+    setFeatureGateSummary(null);
     setDetectResult(null);
     setAgentMessages([]);
     setPipelineSummary(null);
@@ -398,6 +409,7 @@ export default function ProjectDetailPage() {
     setEngineerPRA(null);
     setValidatorPRA(null);
     setDetectionPRA(null);
+    setMultiFeatureFallback(null);
     setActiveTab('analyst');
 
     try {
@@ -406,9 +418,11 @@ export default function ProjectDetailPage() {
           regulatory_text: inputText.slice(0, 5000),
           project_id: id,
           schema_key: project?.schemaKey || 'fintrac',
-          model: project?.llmModel || 'gpt-4o',
+          model: settings.model || project?.llmModel || 'gpt-4o',
           temperature: project?.temperature ?? 0,
           max_corrections: project?.maxCorrections ?? 5,
+          channels: useMultiFeature ? selectedChannels : undefined,
+          multi_feature: useMultiFeature,
         },
         (evt: CompileSSEEvent) => {
           const eventType = evt.event;
@@ -507,7 +521,22 @@ export default function ProjectDetailPage() {
           }
           // Feature evaluation
           else if (eventType === 'feature_eval') {
-            setFeatureEvalData(data as unknown as FeatureValidationResult);
+            const rawEval = data as any;
+            // Multi-feature mode wraps the result under eval_result; single-feature sends it flat
+            const evalData = rawEval.eval_result ?? rawEval;
+            setFeatureEvalData(evalData as FeatureValidationResult);
+            // Accumulate per-candidate results for the gate summary table
+            if (rawEval.candidate_index != null) {
+              setAllFeatureEvals(prev => [...prev, {
+                candidateIndex: rawEval.candidate_index,
+                featureName: rawEval.feature_name ?? '',
+                evalData,
+              }]);
+            }
+          }
+          // Feature gate summary (multi-feature IV filter result)
+          else if (eventType === 'feature_gate_summary') {
+            setFeatureGateSummary(data as unknown as FeatureGateSummary);
           }
           // Detection result
           else if (eventType === 'detection_result') {
@@ -526,6 +555,9 @@ export default function ProjectDetailPage() {
           // Iteration trace
           else if (eventType === 'iteration_trace') {
             setIterationHistory(prev => [...prev, data as IterationTrace]);
+          }
+          else if (eventType === 'fallback_notice') {
+            setMultiFeatureFallback((data as { message: string }).message);
           }
           else if (eventType === 'dashboard_spec') {
             setDashboardBundle(data as unknown as DashboardBundle);
@@ -554,8 +586,10 @@ export default function ProjectDetailPage() {
       console.error('Pipeline error:', err);
     } finally {
       setPipelineRunning(false);
+      // Always refresh the feature list — pipeline_complete may not fire on error/interruption
+      loadFeatures();
     }
-  }, [inputText, id, project, loadFeatures, loadAlerts]);
+  }, [inputText, id, project, settings, useMultiFeature, selectedChannels, loadFeatures, loadAlerts]);
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
@@ -654,6 +688,18 @@ export default function ProjectDetailPage() {
               activeTabView={activeTab}
             />
           </div>
+          {/* PERCEIVE error banner */}
+          {traceEvents.some(t => t.level === 'error' && ((t.agent === 'Pipeline' && (t.data as any)?.phase === 'perceive') || (t.agent === 'Feature Engineer' && t.message?.toLowerCase().includes('perceive')))) && (
+            <div className="max-w-7xl mx-auto px-6 py-2">
+              <div className="bg-red-600/8 border border-red-500/20 text-red-200 rounded-md p-3 flex items-center justify-between">
+                <div className="text-sm">PERCEIVE phase returned incomplete data or an error — see trace for details.</div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setActiveTab('analyst')} className="text-xs px-2 py-1 rounded bg-red-700/10 hover:bg-red-700/20">View Analyst</button>
+                  <button onClick={() => setActiveTab('validator')} className="text-xs px-2 py-1 rounded bg-slate-700/10 hover:bg-slate-700/20">Open Validator</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -668,8 +714,13 @@ export default function ProjectDetailPage() {
                 onRunPipeline={handleRunPipeline}
                 pipelineRunning={pipelineRunning}
                 perceiveData={perceiveData}
-                traceEvents={traceEvents.filter(t => t.agent === 'Feature Engineer')}
+                traceEvents={traceEvents.filter(t => t.agent === 'Feature Engineer' || t.level === 'error')}
                 pra={analystPRA}
+                useMultiFeature={useMultiFeature}
+                onToggleMultiFeature={() => setUseMultiFeature(v => !v)}
+                selectedChannels={selectedChannels}
+                onChannelsChange={setSelectedChannels}
+                multiFeatureFallback={multiFeatureFallback}
               />
 
               {/* ── Feature Library ────────────────────────────────────────── */}
@@ -708,7 +759,7 @@ export default function ProjectDetailPage() {
             <motion.div key="adapter" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <AdapterTab
                 schemaAdaptData={schemaAdaptData}
-                traceEvents={traceEvents.filter(t => t.agent === 'Schema Adapter')}
+                traceEvents={traceEvents.filter(t => t.agent === 'Schema Adapter' || t.level === 'error')}
                 pipelineRunning={pipelineRunning}
                 pra={adapterPRA}
               />
@@ -720,7 +771,7 @@ export default function ProjectDetailPage() {
                 generatedCode={generatedCode}
                 computationPlan={perceiveData?.computation_plan || null}
                 schemaAdaptSummary={schemaAdaptData?.summary || null}
-                traceEvents={traceEvents.filter(t => t.message?.includes('REASON'))}
+                traceEvents={traceEvents.filter(t => t.message?.includes('REASON') || t.level === 'error')}
                 pipelineRunning={pipelineRunning}
                 pra={engineerPRA}
               />
@@ -732,7 +783,9 @@ export default function ProjectDetailPage() {
                 validationData={validationData}
                 codeHistory={codeHistory}
                 featureEvalData={featureEvalData}
-                traceEvents={traceEvents.filter(t => t.agent === 'Deterministic Validator')}
+                allFeatureEvals={allFeatureEvals}
+                featureGateSummary={featureGateSummary}
+                traceEvents={traceEvents.filter(t => t.agent === 'Deterministic Validator' || t.level === 'error')}
                 pipelineRunning={pipelineRunning}
                 agentMessages={agentMessages}
                 pra={validatorPRA}

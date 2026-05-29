@@ -17,6 +17,7 @@ import {
   Database,
 } from 'lucide-react';
 import { uploadPDF, fetchJSON } from '../api/client';
+import { useTheme } from '../hooks/useTheme';
 
 interface ExtractedDoc {
   upload_id: string;
@@ -32,20 +33,36 @@ interface Initiative {
   crime_type: string;
 }
 
-const CRIME_COLORS: Record<string, string> = {
-  ML: 'from-purple-500/20 to-purple-900/10 border-purple-500/30 text-purple-300',
-  HT: 'from-red-500/20 to-red-900/10 border-red-500/30 text-red-300',
-  TF: 'from-amber-500/20 to-amber-900/10 border-amber-500/30 text-amber-300',
-  Drugs: 'from-emerald-500/20 to-emerald-900/10 border-emerald-500/30 text-emerald-300',
-  Tax: 'from-blue-500/20 to-blue-900/10 border-blue-500/30 text-blue-300',
-  Fraud: 'from-orange-500/20 to-orange-900/10 border-orange-500/30 text-orange-300',
+// Dark mode — light text stands out on dark gradient backgrounds
+const CRIME_COLORS_DARK: Record<string, string> = {
+  ML:        'from-purple-500/20 to-purple-900/10 border-purple-500/30 text-purple-300',
+  HT:        'from-red-500/20 to-red-900/10 border-red-500/30 text-red-300',
+  TF:        'from-amber-500/20 to-amber-900/10 border-amber-500/30 text-amber-300',
+  Drugs:     'from-emerald-500/20 to-emerald-900/10 border-emerald-500/30 text-emerald-300',
+  Tax:       'from-blue-500/20 to-blue-900/10 border-blue-500/30 text-blue-300',
+  Fraud:     'from-orange-500/20 to-orange-900/10 border-orange-500/30 text-orange-300',
   Sanctions: 'from-rose-500/20 to-rose-900/10 border-rose-500/30 text-rose-300',
-  Wildlife: 'from-green-500/20 to-green-900/10 border-green-500/30 text-green-300',
-  CSAM: 'from-slate-500/20 to-slate-900/10 border-slate-500/30 text-slate-300',
+  Wildlife:  'from-green-500/20 to-green-900/10 border-green-500/30 text-green-300',
+  CSAM:      'from-slate-500/20 to-slate-900/10 border-slate-500/30 text-slate-300',
+};
+
+// Light mode — dark text on soft pastel backgrounds for high contrast
+const CRIME_COLORS_LIGHT: Record<string, string> = {
+  ML:        'from-purple-100 to-purple-50 border-purple-300 text-purple-800',
+  HT:        'from-red-100 to-red-50 border-red-300 text-red-800',
+  TF:        'from-amber-100 to-amber-50 border-amber-300 text-amber-900',  // amber needs -900 for contrast
+  Drugs:     'from-emerald-100 to-emerald-50 border-emerald-300 text-emerald-800',
+  Tax:       'from-blue-100 to-blue-50 border-blue-300 text-blue-800',
+  Fraud:     'from-orange-100 to-orange-50 border-orange-300 text-orange-800',
+  Sanctions: 'from-rose-100 to-rose-50 border-rose-300 text-rose-800',
+  Wildlife:  'from-green-100 to-green-50 border-green-300 text-green-800',
+  CSAM:      'from-slate-100 to-slate-50 border-slate-300 text-slate-700',
 };
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const CRIME_COLORS = theme === 'light' ? CRIME_COLORS_LIGHT : CRIME_COLORS_DARK;
   const [extractedDoc, setExtractedDoc] = useState<ExtractedDoc | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -266,9 +283,15 @@ export default function HomePage() {
                 >
                   <div className="flex items-start justify-between">
                     <FileText className="w-4 h-4 mt-0.5 opacity-60" />
-                    <span className="text-[10px] opacity-60 uppercase tracking-wider">{init.crime_type}</span>
+                    <span className={`text-[10px] uppercase tracking-wider
+                      ${theme === 'light' ? 'opacity-70 font-semibold' : 'opacity-60'}`}>
+                      {init.crime_type}
+                    </span>
                   </div>
-                  <div className="text-sm font-medium mt-2 leading-snug">{init.name}</div>
+                  <div className={`text-sm mt-2 leading-snug
+                    ${theme === 'light' ? 'font-semibold' : 'font-medium'}`}>
+                    {init.name}
+                  </div>
                 </motion.button>
               ))}
         </motion.div>

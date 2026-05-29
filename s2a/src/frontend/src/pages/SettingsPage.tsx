@@ -14,7 +14,7 @@ const MODEL_GROUP: SettingItem[] = [
     key: 'model',
     label: 'LLM Model',
     description: 'Model used for feature code generation',
-    options: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+    options: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
   },
   {
     key: 'temperature',

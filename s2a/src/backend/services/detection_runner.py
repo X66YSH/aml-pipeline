@@ -6,6 +6,7 @@ and returns per-channel, per-model evaluation metrics.
 
 import gc
 import traceback
+import logging
 
 import numpy as np
 import pandas as pd
@@ -22,8 +23,35 @@ from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC, OneClassSVM
 
+try:
+    from xgboost import XGBClassifier as _XGBClassifier
+    _XGBOOST_AVAILABLE = True
+except ImportError:
+    _XGBOOST_AVAILABLE = False
+
 from config import CHANNEL_DATA_DIR, KYC_TABLES
 from core.data_loader import load_channel_data
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
+    for col in df.columns:
+        col_lower = col.lower()
+        is_dt_col = (
+            col_lower.endswith("datetime")
+            or col_lower.endswith("date")
+            or col_lower == "timestamp"
+            or col_lower.endswith("_timestamp")
+            or col_lower.endswith("_time")
+        )
+        if is_dt_col and df[col].dtype == object:
+            try:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+            except Exception:
+                pass
+    return df
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -38,6 +66,7 @@ MODEL_MAP = {
     "gradient_boosting": ("Gradient Boosting", "supervised"),
     "adaboost": ("AdaBoost", "supervised"),
     "svm": ("Support Vector Machine", "supervised"),
+    "xgboost": ("XGBoost", "supervised"),
 }
 
 # Maximum training samples for slow models (SVM is O(n**2 ~ n**3))
@@ -82,7 +111,12 @@ def _build_feature_matrix(
             if fn is None:
                 feature_errors.append({"name": spec["name"], "error": "No compute_feature function found"})
                 continue
-            result = fn(df.copy(), accounts_df.copy() if accounts_df is not None else None)
+            df_copy = df.copy()
+            accounts_copy = accounts_df.copy() if accounts_df is not None else None
+            df_copy = _normalize_datetime_columns(df_copy)
+            if accounts_copy is not None:
+                accounts_copy = _normalize_datetime_columns(accounts_copy)
+            result = fn(df_copy, accounts_copy)
             if result is None or not isinstance(result, pd.DataFrame):
                 feature_errors.append({"name": spec["name"], "error": "Function did not return a DataFrame"})
                 continue
@@ -196,6 +230,20 @@ def _run_models(
             elif model_key == "svm":
                 clf = SVC(kernel="rbf", class_weight="balanced", probability=True, random_state=42)
                 clf.fit(X_train_slow, y_train_slow)
+                scores = clf.predict_proba(X_test_scaled)[:, 1]
+            elif model_key == "xgboost":
+                if not _XGBOOST_AVAILABLE:
+                    results.append({"key": model_key, "name": model_name, "mode": mode, "error": "xgboost not installed (pip install xgboost)"})
+                    continue
+                scale_pos_weight = float((len(y_train) - y_train.sum()) / max(y_train.sum(), 1))
+                clf = _XGBClassifier(
+                    n_estimators=100,
+                    scale_pos_weight=scale_pos_weight,
+                    random_state=42,
+                    eval_metric="logloss",
+                    verbosity=0,
+                )
+                clf.fit(X_train_scaled, y_train)
                 scores = clf.predict_proba(X_test_scaled)[:, 1]
             else:
                 continue
@@ -406,7 +454,7 @@ def run_detection(
     # --- Per-channel runs ---
     for ch in channels:
         try:
-            df_ch, accounts_df_ch = load_channel_data([ch], nrows=50_000)
+            df_ch, accounts_df_ch = load_channel_data([ch], nrows=200_000, random_state=42)
             available_cols = set(df_ch.columns)
             if accounts_df_ch is not None:
                 available_cols |= set(accounts_df_ch.columns)
@@ -434,14 +482,63 @@ def run_detection(
                 continue
 
             # Use channel customers as base -- only customers with actual transactions
-            merged = fm.merge(labels_df, on="customer_id", how="left")
-            merged["label"] = merged["label"].fillna(0).astype(int)
-            feat_cols = [c for c in merged.columns if c not in ("customer_id", "label")]
+            # --- Diagnostics: counts for debugging label/ID mismatches ---
+            try:
+                n_labels_total = int(labels_df["customer_id"].nunique())
+            except Exception:
+                n_labels_total = None
+            try:
+                n_feat_customers = int(fm["customer_id"].nunique())
+            except Exception:
+                n_feat_customers = None
+
+            # intersection / matched positives
+            try:
+                n_matched = int(fm["customer_id"].isin(labels_df["customer_id"]).sum())
+            except Exception:
+                n_matched = None
+
+            tmp_merged = fm.merge(labels_df, on="customer_id", how="left")
+            tmp_merged["label"] = tmp_merged["label"].fillna(0).astype(int)
+            try:
+                n_matched_positive = int(tmp_merged["label"].sum())
+            except Exception:
+                n_matched_positive = None
+
+            feat_cols = [c for c in tmp_merged.columns if c not in ("customer_id", "label")]
             if not feat_cols:
-                channel_results[ch] = {"error": "No feature columns", "models": []}
+                channel_results[ch] = {
+                    "error": "No feature columns",
+                    "models": [],
+                    "diagnostics": {
+                        "n_labels_total": n_labels_total,
+                        "n_feat_customers": n_feat_customers,
+                        "n_matched_customers": n_matched,
+                        "n_matched_positive_labels": n_matched_positive,
+                    },
+                }
                 continue
-            merged[feat_cols] = merged[feat_cols].fillna(0)
-            channel_results[ch] = _split_and_run(merged, feat_cols, models)
+            tmp_merged[feat_cols] = tmp_merged[feat_cols].fillna(0)
+
+            result = _split_and_run(tmp_merged, feat_cols, models)
+            # Attach diagnostics to channel result for visibility in the UI/logs
+            result.setdefault("diagnostics", {})
+            result["diagnostics"].update({
+                "n_labels_total": n_labels_total,
+                "n_feat_customers": n_feat_customers,
+                "n_matched_customers": n_matched,
+                "n_matched_positive_labels": n_matched_positive,
+            })
+            # Log diagnostics to backend logs for quick visibility
+            try:
+                logging.info(
+                    "detection diagnostics for channel=%s: %s",
+                    ch,
+                    result["diagnostics"],
+                )
+            except Exception:
+                pass
+            channel_results[ch] = result
         except Exception as e:
             channel_results[ch] = {"error": str(e), "models": []}
         finally:
@@ -481,7 +578,22 @@ def _run_detection_ibm_aml(
     from config import IBM_AML_TRANS_PATH
 
     try:
-        df = pd.read_csv(IBM_AML_TRANS_PATH, nrows=50_000)
+        # Selective chunk read: stop as soon as MIN_POS laundering rows are found.
+        # Reads 50k rows at a time (fast like the original), but advances through
+        # the file until positive labels appear — avoids loading 500k rows every run.
+        CHUNK = 50_000
+        MIN_POS = 50
+        MAX_ROWS = 500_000
+        chunks = []
+        n_pos = 0
+        rows_read = 0
+        for _chunk in pd.read_csv(IBM_AML_TRANS_PATH, chunksize=CHUNK):
+            chunks.append(_chunk)
+            n_pos += int((_chunk["Is Laundering"] == 1).sum())
+            rows_read += len(_chunk)
+            if n_pos >= MIN_POS or rows_read >= MAX_ROWS:
+                break
+        df = pd.concat(chunks, ignore_index=True)
     except Exception as e:
         return {"success": False, "error": f"Failed to load IBM AML data: {e}", "channels": {}, "feature_errors": []}
 

@@ -1,9 +1,9 @@
 /**
  * DetectionTab — Anomaly Detection workspace (Pipeline Tab 5).
  *
- * Displays Isolation Forest detection results: per-channel metrics,
- * ROC curves, feature importance bars, confusion matrices, and
- * the Detection Strategist's reasoning from agent messages.
+ * Displays multi-model detection results: per-channel metrics,
+ * model comparison (AUC bar), ROC curves, feature importance bars,
+ * confusion matrices, and the Detection Strategist's reasoning.
  */
 
 import { useMemo } from 'react';
@@ -129,10 +129,10 @@ export default function DetectionTab({
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-16 flex flex-col items-center justify-center">
           <Loader2 className="w-10 h-10 text-purple-400 animate-spin mb-4" />
           <p className="text-sm text-slate-400">
-            Running Isolation Forest on compatible channels...
+            Running detection models on compatible channels...
           </p>
           <p className="text-xs text-slate-600 mt-1">
-            Training models and computing anomaly scores
+            Training 2 unsupervised + 3 supervised models and computing anomaly scores
           </p>
         </div>
       </motion.div>
@@ -176,7 +176,7 @@ export default function DetectionTab({
       <div className="flex items-center gap-3">
         <Cpu className="w-5 h-5 text-purple-400" />
         <h2 className="text-lg font-bold text-white">
-          Anomaly Detection &mdash; Isolation Forest
+          Anomaly Detection &mdash; Multi-Model Comparison
         </h2>
         {detectResult.success && (
           <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
@@ -226,9 +226,10 @@ export default function DetectionTab({
       {validChannels.length > 0 && (
         <div className="space-y-4">
           {validChannels.map((ch) => {
-            const bestModel = (ch.models || [])
+            const rankedModels = (ch.models || [])
               .filter((m) => !m.error && m.auc_roc !== undefined)
-              .sort((a, b) => (b.auc_roc ?? 0) - (a.auc_roc ?? 0))[0];
+              .sort((a, b) => (b.auc_roc ?? 0) - (a.auc_roc ?? 0));
+            const bestModel = rankedModels[0];
             if (!bestModel) return null;
 
             const cm = bestModel.confusion_matrix;
@@ -250,15 +251,83 @@ export default function DetectionTab({
                       {ch.n_accounts.toLocaleString()} accounts
                     </span>
                   )}
+                  <span className="text-[10px] text-slate-500">
+                    {rankedModels.length} model{rankedModels.length !== 1 ? 's' : ''}
+                  </span>
                   {bestModel.auc_roc != null && (
                     <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
-                      AUC {(bestModel.auc_roc * 100).toFixed(1)}%
+                      Best AUC {(bestModel.auc_roc * 100).toFixed(1)}% &mdash; {bestModel.name}
                     </span>
                   )}
                 </div>
 
-                {/* Metrics row */}
-                <div className="px-4 py-3 flex items-center gap-5 flex-wrap">
+                {/* ── Model comparison table ──────────────────────────────── */}
+                {rankedModels.length > 0 && (
+                  <div className="px-4 pt-3 pb-2">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <BarChart3 className="w-3 h-3" /> All Models
+                    </div>
+                    <div className="overflow-x-auto rounded-lg border border-slate-700/40">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-900/60 text-slate-500 text-left">
+                            <th className="px-3 py-1.5 font-medium">Model</th>
+                            <th className="px-3 py-1.5 font-medium">Type</th>
+                            <th className="px-3 py-1.5 font-medium text-right">AUC-ROC</th>
+                            <th className="px-3 py-1.5 font-medium text-right">F1</th>
+                            <th className="px-3 py-1.5 font-medium text-right">Prec@K</th>
+                            <th className="px-3 py-1.5 font-medium text-right">Flagged</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rankedModels.map((m, i) => (
+                            <tr
+                              key={m.key}
+                              className={`border-t border-slate-700/30 ${i === 0 ? 'bg-emerald-500/5' : ''}`}
+                            >
+                              <td className="px-3 py-1.5 font-medium text-slate-200 flex items-center gap-1.5">
+                                {i === 0 && <span className="text-[9px] text-emerald-400 font-bold">★</span>}
+                                {m.name}
+                              </td>
+                              <td className="px-3 py-1.5">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                  m.mode === 'unsupervised'
+                                    ? 'bg-sky-500/15 text-sky-400'
+                                    : 'bg-purple-500/15 text-purple-400'
+                                }`}>
+                                  {m.mode}
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono">
+                                <span className={
+                                  (m.auc_roc ?? 0) >= 0.85 ? 'text-emerald-400' :
+                                  (m.auc_roc ?? 0) >= 0.70 ? 'text-amber-400' : 'text-red-400'
+                                }>
+                                  {m.auc_roc != null ? (m.auc_roc * 100).toFixed(1) + '%' : '—'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-slate-400">
+                                {m.f1_score != null ? (m.f1_score * 100).toFixed(1) + '%' : '—'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-slate-400">
+                                {m.precision_at_k != null ? (m.precision_at_k * 100).toFixed(1) + '%' : '—'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-slate-400">
+                                {m.flagged_accounts ?? '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Best model headline metrics */}
+                <div className="px-4 py-3 border-t border-slate-700/30 flex items-center gap-5 flex-wrap">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider w-full mb-1">
+                    Best model detail &mdash; {bestModel.name}
+                  </div>
                   {bestModel.auc_roc != null && (
                     <div className="text-center">
                       <div className="text-xl font-bold text-emerald-400">
@@ -379,7 +448,10 @@ export default function DetectionTab({
                       border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '11px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#94a3b8' }}
+                    itemStyle={{ color: '#e2e8f0' }}
                   />
                   <Legend wrapperStyle={{ fontSize: '10px' }} />
                   {/* Diagonal reference */}
@@ -437,7 +509,10 @@ export default function DetectionTab({
                       border: '1px solid #334155',
                       borderRadius: '8px',
                       fontSize: '12px',
+                      color: '#e2e8f0',
                     }}
+                    labelStyle={{ color: '#94a3b8' }}
+                    itemStyle={{ color: '#e2e8f0' }}
                     formatter={(v: number) => [v.toFixed(4), 'Importance']}
                   />
                   <Bar dataKey="importance" fill="#a855f7" radius={[0, 4, 4, 0]} />

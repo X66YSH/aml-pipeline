@@ -30,6 +30,25 @@ def _subsample_series(points: list[dict], max_points: int = 48) -> list[dict]:
     return points[::step][:max_points]
 
 
+def _fmt_bin_range(s: str) -> str:
+    """Round numbers in a pandas qcut range string for readable chart labels.
+
+    e.g. '(789.706, 1752.86]' → '(790, 1753]'
+         '(-0.000999, 24.712)' → '(0, 25)'
+    """
+    import re
+
+    def _r(m: re.Match) -> str:
+        v = float(m.group())
+        if abs(v) >= 100:
+            return str(int(round(v)))
+        if abs(v) >= 1:
+            return f"{round(v, 1):g}"
+        return f"{round(v, 3):g}"
+
+    return re.sub(r"-?\d+\.?\d*", _r, s)
+
+
 def _safe_float(x: Any) -> float | None:
     try:
         if x is None:
@@ -58,6 +77,7 @@ def collect_pipeline_snapshot(
     verified_count: int,
     run_id: int | None,
     db: Session | None,
+    all_feature_stats: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Build a domain-agnostic material bundle: metrics + series + small tables (no LLM)."""
     metrics: list[dict[str, Any]] = []
@@ -75,6 +95,20 @@ def collect_pipeline_snapshot(
     add_metric("verified_count", "RCC verified", verified_count, "int")
     add_metric("compatible_channels_n", "Compatible channels", len(compatible_channels or []), "int")
 
+    # ── Feature-level gate stats ──────────────────────────────────────────
+    feature_stats_list: list[dict] = list(all_feature_stats or [])
+    if not feature_stats_list and feature_name:
+        feature_stats_list = [{
+            "name": feature_name,
+            "best_iv": round(float(max_iv or 0.0), 4),
+            "best_ks": 0.0,
+            "best_channel": best_eval_channel or best_channel or "—",
+            "included": (max_iv or 0.0) >= 0.02,
+        }]
+    n_passing = sum(1 for f in feature_stats_list if f.get("included", False))
+    n_total = len(feature_stats_list)
+    add_metric("features_passing_gate", "Features Passing Gate", f"{n_passing} / {n_total}", "text")
+
     ind = indicator or {}
     narrative = {
         "indicator_category": ind.get("category"),
@@ -84,6 +118,19 @@ def collect_pipeline_snapshot(
 
     series_catalog: dict[str, Any] = {}
     tables: dict[str, Any] = {}
+
+    # Feature IV ranking bar (per-feature, not per-channel)
+    feat_sorted = sorted(feature_stats_list, key=lambda f: f.get("best_iv", 0.0), reverse=True)
+    if feat_sorted:
+        series_catalog["feature_iv_bar"] = {
+            "kind": "bar",
+            "label": "Feature IV ranking",
+            "points": [
+                {"name": f["name"], "value": round(f.get("best_iv", 0.0), 4),
+                 "included": f.get("included", False)}
+                for f in feat_sorted
+            ],
+        }
 
     # Per-channel IV / KS (generic table + bar source)
     iv_rows = []
@@ -148,6 +195,67 @@ def collect_pipeline_snapshot(
                 ),
             }
 
+    # WoE bins — one series per passing feature (multi-feature) or fallback to channel_results
+    _passing_with_eval = [
+        f for f in feature_stats_list
+        if f.get("included", False)
+        and isinstance(f.get("eval_result"), dict)
+        and isinstance(f["eval_result"].get("channel_results"), dict)
+    ]
+    if _passing_with_eval:
+        for _fi, _fstat in enumerate(_passing_with_eval):
+            _fev = _fstat["eval_result"]
+            _fbest_ch = _fstat.get("best_channel")
+            _fch_res = _fev.get("channel_results", {})
+            _fch_data = _fch_res.get(_fbest_ch) if _fbest_ch else None
+            if not _fch_data:
+                for _v in _fch_res.values():
+                    if isinstance(_v, dict) and _v.get("iv_bins"):
+                        _fch_data = _v
+                        break
+            _fiv_bins = (_fch_data or {}).get("iv_bins") or []
+            if len(_fiv_bins) >= 2:
+                _sid = "woe_bins_bar" if _fi == 0 else f"woe_bins_bar_{_fi + 1}"
+                series_catalog[_sid] = {
+                    "kind": "bar",
+                    "label": f"WoE by value range — {_fstat['name']}",
+                    "points": [
+                        {
+                            "range": _fmt_bin_range(str(b.get("range", "")))[:20],
+                            "woe": round(float(b.get("woe", 0)), 4),
+                            "iv": round(float(b.get("iv", 0)), 4),
+                            "count": int(b.get("count", 0)),
+                        }
+                        for b in _fiv_bins
+                    ],
+                }
+    else:
+        # Single-feature fallback: use channel_results directly
+        _best_ch_result = None
+        if best_eval_channel and isinstance((channel_results or {}).get(best_eval_channel), dict):
+            _best_ch_result = channel_results[best_eval_channel]
+        elif channel_results:
+            for _v in channel_results.values():
+                if isinstance(_v, dict) and _v.get("iv_bins"):
+                    _best_ch_result = _v
+                    break
+        if _best_ch_result:
+            _iv_bins = _best_ch_result.get("iv_bins") or []
+            if len(_iv_bins) >= 2:
+                series_catalog["woe_bins_bar"] = {
+                    "kind": "bar",
+                    "label": f"WoE by value range — {feature_name or 'feature'}",
+                    "points": [
+                        {
+                            "range": _fmt_bin_range(str(b.get("range", "")))[:20],
+                            "woe": round(float(b.get("woe", 0)), 4),
+                            "iv": round(float(b.get("iv", 0)), 4),
+                            "count": int(b.get("count", 0)),
+                        }
+                        for b in _iv_bins
+                    ],
+                }
+
     # Alert preview (optional)
     preview_rows: list[dict[str, Any]] = []
     if db is not None and run_id is not None:
@@ -174,6 +282,35 @@ def collect_pipeline_snapshot(
             "rows": preview_rows,
         }
 
+    # Confusion matrix from best detection model
+    cm_data: dict[str, Any] | None = None
+    if best_model and isinstance(best_model, dict):
+        _cm = best_model.get("confusion_matrix")
+        if isinstance(_cm, dict) and any(k in _cm for k in ("tp", "fp", "fn", "tn")):
+            cm_data = {
+                "tp": int(_cm.get("tp", 0)),
+                "fp": int(_cm.get("fp", 0)),
+                "fn": int(_cm.get("fn", 0)),
+                "tn": int(_cm.get("tn", 0)),
+                "model_name": str(best_model.get("name") or best_model.get("key") or "best model"),
+            }
+
+    # Feature gate pass/fail table
+    if feat_sorted:
+        tables["feature_gate"] = {
+            "columns": ["feature", "iv", "ks", "channel", "pass"],
+            "rows": [
+                {
+                    "feature": f["name"],
+                    "iv": round(f.get("best_iv", 0.0), 4),
+                    "ks": round(f.get("best_ks", 0.0), 4),
+                    "channel": str(f.get("best_channel") or "—"),
+                    "pass": "✓" if f.get("included", False) else "✗",
+                }
+                for f in feat_sorted
+            ],
+        }
+
     return {
         "run_meta": {
             "project_id": project_id,
@@ -185,6 +322,7 @@ def collect_pipeline_snapshot(
         "metrics": metrics,
         "series_catalog": series_catalog,
         "tables": tables,
+        "confusion_matrix": cm_data,
     }
 
 
@@ -192,8 +330,13 @@ def _catalog_summary_for_llm(material: dict[str, Any], max_chars: int = 12000) -
     """Compact description of bindable ids for the LLM (no giant embeddings)."""
     snap = {
         "metrics": [{"id": m["id"], "label": m["label"], "value": m["value"]} for m in material.get("metrics", [])],
-        "series_ids": list((material.get("series_catalog") or {}).keys()),
+        "series": {k: v.get("label", k) for k, v in (material.get("series_catalog") or {}).items()},
         "table_ids": list((material.get("tables") or {}).keys()),
+        "has_confusion_matrix": material.get("confusion_matrix") is not None,
+        "has_regulatory_narrative": bool(
+            isinstance(material.get("narrative"), dict) and
+            (material["narrative"].get("indicator_description") or material["narrative"].get("regulatory_preview"))
+        ),
         "narrative": material.get("narrative"),
     }
     text = json.dumps(snap, indent=2, default=str)
@@ -253,6 +396,13 @@ def _validate_widgets(spec: dict[str, Any], material: dict[str, Any]) -> dict[st
         elif wtype == "markdown":
             if not isinstance(w.get("body"), str):
                 ok = False
+        elif wtype == "confusion_matrix":
+            if not isinstance(material.get("confusion_matrix"), dict):
+                ok = False
+        elif wtype == "regulatory_basis":
+            _narr = material.get("narrative") or {}
+            if not (isinstance(_narr, dict) and (_narr.get("indicator_description") or _narr.get("regulatory_preview"))):
+                ok = False
         else:
             ok = False
         if ok:
@@ -271,16 +421,32 @@ async def plan_dashboard_with_llm(
     from openai import AsyncOpenAI
 
     summary = _catalog_summary_for_llm(material)
+
+    # Build dynamic WoE widget examples (one per passing feature series)
+    _sc = material.get("series_catalog") or {}
+    _woe_sids = sorted(k for k in _sc if k.startswith("woe_bins_bar"))
+    _woe_examples = "".join(
+        f'\n    {{"type": "bar", "span": 6, "title": "{_sc[s].get("label", "WoE by value range")}", "series_id": "{s}"}},'
+        for s in _woe_sids
+    ) if _woe_sids else '\n    {"type": "bar", "span": 6, "title": "WoE by value range", "series_id": "woe_bins_bar"},'
+
     sys_prompt = (
         "You are a Dashboard Builder agent. You receive a JSON summary of a completed analytics "
         "pipeline run (metric ids, optional series_ids for charts, optional table_ids). "
-        "Design a concise executive dashboard: title, subtitle, layout rationale, and a list of widgets. "
-        "Rules: (1) NEVER invent numeric results — only reference provided metric ids, series_id, or table_id. "
-        "(2) Prefer 4–8 widgets. (3) Use widget types: kpi_row, bar, line, table, markdown. "
-        "(4) For markdown, write a short audience-facing overview without specific numbers unless they "
-        "appear in the narrative text; you may refer readers to KPIs and charts. "
-        "(5) Return JSON only with keys: "
-        "dashboard_title, dashboard_subtitle, layout_rationale, widgets."
+        "Design a compact executive dashboard: title, subtitle, layout rationale, and 6–9 widgets. "
+        "Rules: "
+        "(1) NEVER invent numeric results — only reference provided metric ids, series_id, or table_id. "
+        "(2) Use widget types: kpi_row, bar, line, table, markdown, confusion_matrix, regulatory_basis. "
+        "(3) KPI rows always span=12. Prefer span=6 for charts so two appear side-by-side. "
+        "(4) Prefer feature_iv_bar over channel_iv_bar. Pair it (span=6) with model_auc_bar (span=6). "
+        "(5) For bar widgets with many labels, set \"horizontal\": true. "
+        "(6) Pair feature_gate table (span=6) with roc_best line (span=6). "
+        "(7) If woe_bins_bar or woe_bins_bar_N series exist (one per passing feature), add each at span=6; "
+        "pair them together in a row, then add confusion_matrix (span=6) after — "
+        "these together show HOW discriminative each feature is and HOW reliable the model is. "
+        "(8) If has_regulatory_narrative is true, always add a regulatory_basis widget (span=12) as the final row. "
+        "(9) For markdown, write exactly 2–3 crisp sentences: overall verdict, feature note, model note. No lists. "
+        "(10) Return JSON only with keys: dashboard_title, dashboard_subtitle, layout_rationale, widgets."
     )
     user_prompt = f"""Available data (bind only to these ids):\n{summary}
 
@@ -288,16 +454,18 @@ Respond with JSON:
 {{
   "dashboard_title": "string",
   "dashboard_subtitle": "string",
-  "layout_rationale": "2-4 sentences on why this layout fits THIS run",
+  "layout_rationale": "2-3 sentences on why this layout fits THIS run",
   "widgets": [
-    {{"type": "kpi_row", "span": 12, "metric_ids": ["best_auc", "alert_count"]}},
-    {{"type": "bar", "span": 12, "title": "optional", "series_id": "model_auc_bar"}},
-    {{"type": "line", "span": 12, "title": "optional", "series_id": "roc_best"}},
-    {{"type": "table", "span": 12, "title": "optional", "table_id": "channel_eval"}},
-    {{"type": "markdown", "span": 12, "body": "..."}}
+    {{"type": "kpi_row", "span": 12, "metric_ids": ["best_auc", "best_iv", "features_passing_gate", "alert_count"]}},
+    {{"type": "bar", "span": 6, "title": "Feature IV ranking", "series_id": "feature_iv_bar", "horizontal": true}},
+    {{"type": "bar", "span": 6, "title": "Model AUC comparison", "series_id": "model_auc_bar", "horizontal": true}},
+    {{"type": "table", "span": 6, "title": "Feature gate", "table_id": "feature_gate"}},
+    {{"type": "line", "span": 6, "title": "ROC curve", "series_id": "roc_best"}},{_woe_examples}
+    {{"type": "confusion_matrix", "span": 6, "title": "Confusion matrix"}},
+    {{"type": "regulatory_basis", "span": 12, "title": "Regulatory basis"}}
   ]
 }}
-Span is 1-12 grid columns. Omit widgets if their series_id or table_id is not in the summary."""
+Span is 1-12 grid columns. Omit any widget whose series_id or table_id is not available, or whose type requires data marked false in the summary."""
 
     kwargs: dict[str, Any] = {
         "api_key": OPENAI_API_KEY,
@@ -380,6 +548,7 @@ async def run_dashboard_phase(
     db: Session | None,
     model: str,
     temperature: float = 0.25,
+    all_feature_stats: list[dict] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Yields SSE-shaped events for the dashboard builder."""
     yield {
@@ -409,6 +578,7 @@ async def run_dashboard_phase(
         verified_count=verified_count,
         run_id=run_id,
         db=db,
+        all_feature_stats=all_feature_stats,
     )
 
     yield {
@@ -458,25 +628,47 @@ async def run_dashboard_phase(
 
 
 def _fallback_spec(material: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic dashboard if LLM fails."""
-    widgets: list[dict[str, Any]] = [
-        {"type": "kpi_row", "span": 12, "metric_ids": ["best_auc", "best_iv", "alert_count", "verified_count"]},
-    ]
+    """Deterministic compact dashboard if LLM fails."""
     sc = material.get("series_catalog") or {}
-    if "model_auc_bar" in sc:
-        widgets.append({"type": "bar", "span": 12, "title": "Model comparison", "series_id": "model_auc_bar"})
-    if "channel_iv_bar" in sc:
-        widgets.append({"type": "bar", "span": 12, "title": "Feature IV by channel", "series_id": "channel_iv_bar"})
-    if "roc_best" in sc:
-        widgets.append({"type": "line", "span": 12, "title": "ROC (best model)", "series_id": "roc_best"})
     tabs = material.get("tables") or {}
-    if "channel_eval" in tabs:
-        widgets.append({"type": "table", "span": 12, "title": "Channel evaluation", "table_id": "channel_eval"})
-    if "alerts_preview" in tabs:
-        widgets.append({"type": "table", "span": 12, "title": "Top alerts", "table_id": "alerts_preview"})
+    widgets: list[dict[str, Any]] = [
+        {"type": "kpi_row", "span": 12, "metric_ids": [
+            "best_auc", "best_iv", "features_passing_gate", "alert_count",
+        ]},
+    ]
+    # Row 2: Feature IV + model AUC side-by-side
+    iv_sid = "feature_iv_bar" if "feature_iv_bar" in sc else ("channel_iv_bar" if "channel_iv_bar" in sc else None)
+    has_model = "model_auc_bar" in sc
+    if iv_sid and has_model:
+        widgets.append({"type": "bar", "span": 6, "title": "Feature IV ranking", "series_id": iv_sid, "horizontal": True})
+        widgets.append({"type": "bar", "span": 6, "title": "Model AUC comparison", "series_id": "model_auc_bar", "horizontal": True})
+    elif iv_sid:
+        widgets.append({"type": "bar", "span": 12, "title": "Feature IV ranking", "series_id": iv_sid, "horizontal": True})
+    elif has_model:
+        widgets.append({"type": "bar", "span": 12, "title": "Model AUC comparison", "series_id": "model_auc_bar", "horizontal": True})
+    # Row 3: Feature gate table + ROC curve
+    if "feature_gate" in tabs:
+        widgets.append({"type": "table", "span": 6, "title": "Feature gate", "table_id": "feature_gate"})
+    if "roc_best" in sc:
+        widgets.append({"type": "line", "span": 6, "title": "ROC curve (best model)", "series_id": "roc_best"})
+    elif "alerts_preview" in tabs:
+        widgets.append({"type": "table", "span": 6, "title": "Top alerts", "table_id": "alerts_preview"})
+    # Row 4+: WoE bins (one per passing feature) + confusion matrix
+    woe_sids = sorted(k for k in sc if k.startswith("woe_bins_bar"))
+    for _wk in woe_sids:
+        widgets.append({"type": "bar", "span": 6,
+                        "title": sc[_wk].get("label", "WoE by value range"), "series_id": _wk})
+    if isinstance(material.get("confusion_matrix"), dict):
+        cm = material["confusion_matrix"]
+        widgets.append({"type": "confusion_matrix", "span": 6,
+                        "title": f"Confusion matrix — {cm.get('model_name', 'best model')}"})
+    # Row 5: Regulatory basis (full width)
+    _narr = material.get("narrative") or {}
+    if isinstance(_narr, dict) and (_narr.get("indicator_description") or _narr.get("regulatory_preview")):
+        widgets.append({"type": "regulatory_basis", "span": 12, "title": "Regulatory basis"})
     return {
         "dashboard_title": "Run dashboard",
         "dashboard_subtitle": material.get("run_meta", {}).get("schema_key", "project"),
-        "layout_rationale": "Default layout prioritizes headline metrics, then discriminative power, then detection quality.",
+        "layout_rationale": "Compact layout: KPIs → IV/model bars → gate/ROC → WoE/confusion matrix → regulatory basis.",
         "widgets": widgets,
     }

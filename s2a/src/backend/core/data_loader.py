@@ -18,6 +18,20 @@ from config import (
 )
 
 
+def _count_csv_rows(path: Path) -> int:
+    """Count CSV data rows (excluding header) without loading into memory.
+
+    Uses buffered binary read — typically < 0.3 s for a 500 MB file.
+    Returns 0 if the file is empty or has only a header row.
+    """
+    with open(path, "rb") as f:
+        n_newlines = sum(
+            buf.count(b"\n")
+            for buf in iter(lambda: f.read(1 << 20), b"")
+        )
+    return max(0, n_newlines - 1)  # subtract the header row's newline
+
+
 def load_ibm_aml_sample(
     nrows: int = 50_000,
 ) -> tuple[pd.DataFrame, None]:
@@ -29,11 +43,41 @@ def load_ibm_aml_sample(
 def load_channel_data(
     channel_keys: list[str],
     nrows: int | None = 50_000,
+    random_state: int | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """Load transaction data for one or more channels.
 
-    If multiple channels are selected, data is concatenated with a 'channel' column added.
-    Also loads KYC individual data as the accounts table.
+    If multiple channels are selected, data is concatenated with a 'channel'
+    column added.  Also loads KYC individual data as the accounts table.
+
+    Parameters
+    ----------
+    channel_keys : list[str]
+        Channel keys to load (must exist in ``CHANNELS``).
+    nrows : int | None
+        Maximum number of rows to load.  ``None`` loads the full file.
+    random_state : int | None
+        When provided, draws a proportionally random sample of ``nrows`` rows
+        spread uniformly across the *entire* file rather than reading the first
+        ``nrows`` rows.  This removes the head-of-file time-window bias that
+        inflates KS/IV statistics during feature evaluation and model training.
+
+        Pass ``None`` (default) to keep the original head behaviour, which is
+        appropriate for schema previews and small diagnostic reads where recency
+        context is acceptable.
+
+    Implementation note
+    -------------------
+    Random sampling is done in a single streaming pass:
+    1. Binary line-count to determine the total number of data rows.
+    2. Chunked read (``CHUNK_SIZE`` rows per chunk); each chunk is sampled at
+       ``frac = nrows / total_rows`` using the caller-supplied ``random_state``.
+    3. The combined sample is trimmed to exactly ``nrows`` if rounding causes
+       a minor overshoot.
+
+    Peak memory is bounded by ``max(CHUNK_SIZE, nrows)`` rows — the same order
+    of magnitude as the head-based approach but representative of the full
+    dataset's time range.
     """
     frames = []
     for key in channel_keys:
@@ -43,7 +87,27 @@ def load_channel_data(
         path = CHANNEL_DATA_DIR / ch["file"]
         if not path.exists():
             continue
-        df = pd.read_csv(path, nrows=nrows)
+
+        if nrows is None or random_state is None:
+            # Original behaviour: head of file (fast, recency-biased).
+            df = pd.read_csv(path, nrows=nrows)
+        else:
+            total_rows = _count_csv_rows(path)
+            if total_rows <= nrows:
+                # File is smaller than the cap — load everything.
+                df = pd.read_csv(path)
+            else:
+                frac = nrows / total_rows
+                sampled_chunks: list[pd.DataFrame] = []
+                for chunk in pd.read_csv(path, chunksize=CHUNK_SIZE):
+                    sampled_chunks.append(
+                        chunk.sample(frac=frac, random_state=random_state)
+                    )
+                df = pd.concat(sampled_chunks, ignore_index=True)
+                # Trim to exact target in case fractional rounding overshot.
+                if len(df) > nrows:
+                    df = df.sample(n=nrows, random_state=random_state)
+
         df["channel"] = key
         frames.append(df)
 

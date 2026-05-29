@@ -181,7 +181,7 @@ export default function FeatureLibrary({
                                 <Database className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {group.key === 'benchmark' && f.source !== 'benchmark' && (
+                            {group.key === 'benchmark' && (
                               <button
                                 onClick={() => onPromote(f.id)}
                                 className="p-1.5 rounded-lg hover:bg-purple-500/20 text-slate-400

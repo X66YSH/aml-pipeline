@@ -210,7 +210,4 @@ select {
 [data-theme="light"] .token.keyword { color: #2563eb; }
 [data-theme="light"] .token.function { color: #c026d3; }
 
-/* Initiative cards need stronger colors in light mode */
-[data-theme="light"] [class*="text-rose-"] { --tw-text-opacity: 1; }
-[data-theme="light"] [class*="text-violet-"] { --tw-text-opacity: 1; }
-[data-theme="light"] [class*="text-teal-"] { --tw-text-opacity: 1; }
+/* Initiative card colors are handled in HomePage.tsx via theme-aware CRIME_COLORS maps */

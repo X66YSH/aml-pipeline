@@ -9,10 +9,11 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, Tag, Settings2, ArrowRight, Loader2,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react';
 import type { PerceiveData, TraceEvent, PRAData } from '../../api/client';
 import PRACard from './PRACard';
+import SchemaViewer from '../s2f/SchemaViewer';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,11 @@ interface Props {
   perceiveData: PerceiveData | null;
   traceEvents: TraceEvent[];
   pra?: PRAData | null;
+  useMultiFeature: boolean;
+  onToggleMultiFeature: () => void;
+  selectedChannels: string[];
+  onChannelsChange: (channels: string[]) => void;
+  multiFeatureFallback?: string | null;
 }
 
 // ── Category color mapping ────────────────────────────────────────────────────
@@ -57,6 +63,11 @@ export default function AnalystTab({
   perceiveData,
   traceEvents,
   pra,
+  useMultiFeature,
+  onToggleMultiFeature,
+  selectedChannels,
+  onChannelsChange,
+  multiFeatureFallback,
 }: Props) {
   const [showTrace, setShowTrace] = useState(false);
 
@@ -86,32 +97,88 @@ export default function AnalystTab({
         />
 
         {/* Run Pipeline button */}
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={onRunPipeline}
-            disabled={pipelineRunning || !inputText.trim()}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white
-                       bg-gradient-to-r from-purple-600 to-indigo-600
-                       hover:from-purple-500 hover:to-indigo-500
-                       disabled:opacity-40 disabled:cursor-not-allowed
-                       transition-all duration-200 shadow-lg shadow-purple-500/20"
-          >
-            {pipelineRunning ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                Run Pipeline
-              </>
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onRunPipeline}
+              disabled={pipelineRunning || !inputText.trim()}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white
+                         bg-gradient-to-r from-purple-600 to-indigo-600
+                         hover:from-purple-500 hover:to-indigo-500
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         transition-all duration-200 shadow-lg shadow-purple-500/20"
+            >
+              {pipelineRunning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Run Pipeline
+                </>
+              )}
+            </button>
+            {pipelineRunning && (
+              <span className="text-[11px] text-slate-500">
+                Processing regulatory text through multi-agent pipeline...
+              </span>
             )}
-          </button>
-          {pipelineRunning && (
-            <span className="text-[11px] text-slate-500">
-              Processing regulatory text through multi-agent pipeline...
-            </span>
+          </div>
+
+          {/* Multi-feature toggle — prominent card */}
+          <div
+            onClick={!pipelineRunning ? onToggleMultiFeature : undefined}
+            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all
+              ${useMultiFeature
+                ? 'bg-purple-500/10 border-purple-500/40'
+                : 'bg-slate-900/40 border-slate-700/40 hover:border-slate-600/60'
+              }
+              ${pipelineRunning ? 'opacity-50 cursor-not-allowed' : ''}
+            `}
+          >
+            <input
+              id="multi-feature-toggle"
+              type="checkbox"
+              checked={useMultiFeature}
+              onChange={onToggleMultiFeature}
+              disabled={pipelineRunning}
+              className="mt-0.5 w-4 h-4 rounded bg-slate-700 accent-purple-500 shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-200">Multi-feature mode</span>
+                {useMultiFeature && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium">
+                    ON · up to 3 features
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                {useMultiFeature
+                  ? 'Pipeline will extract multiple indicator candidates from the regulatory text, compile each, and use all validated features in detection.'
+                  : 'Currently generating a single feature. Enable to extract multiple candidates in one run.'}
+              </p>
+            </div>
+          </div>
+          {multiFeatureFallback && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+              <span className="text-xs text-amber-300">{multiFeatureFallback}</span>
+            </div>
+          )}
+          {useMultiFeature && (
+            <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-4">
+              <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-3">
+                Channel selection for multi-feature extraction
+              </div>
+              <SchemaViewer
+                selectedChannels={selectedChannels}
+                onChannelsChange={onChannelsChange}
+              />
+            </div>
           )}
         </div>
       </div>

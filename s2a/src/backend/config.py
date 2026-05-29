@@ -56,9 +56,22 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")  # Default to gpt-4o if not set
 #   OpenAI:       DEFAULT_LLM=gpt-4o
 #   Groq (free):  DEFAULT_LLM=llama-3.3-70b-versatile  + OPENAI_BASE_URL=https://api.groq.com/openai/v1
 DEFAULT_LLM = os.getenv("DEFAULT_LLM", "gpt-4o")
+# Lighter model for constraint-following phases (ADAPT, CORRECT).
+# Defaults to DEFAULT_LLM so it works out-of-the-box for any provider.
+# To save tokens on Groq free tier, set FAST_LLM=llama-3.1-8b-instant in .env
+# For OpenAI, set FAST_LLM=gpt-4o-mini
+FAST_LLM = os.getenv("FAST_LLM", DEFAULT_LLM)
 LLM_TEMPERATURE = 0
 MAX_CORRECTION_ITERATIONS = 5
 MAX_OUTPUT_TOKENS = 4096
+MAX_PERCEIVE_TOKENS = int(os.getenv("MAX_PERCEIVE_TOKENS", "700"))
+MAX_ADAPT_TOKENS = int(os.getenv("MAX_ADAPT_TOKENS", "800"))
+MAX_REASON_TOKENS = int(os.getenv("MAX_REASON_TOKENS", "2400"))   # raised from 1800 — was cutting off complex feature functions
+MAX_CORRECT_TOKENS = int(os.getenv("MAX_CORRECT_TOKENS", "1000"))
+MAX_MULTI_FEATURE_TOKENS = int(os.getenv("MAX_MULTI_FEATURE_TOKENS", "2500"))
+# Summarization (cheap stage to reduce Perceive input size)
+MAX_SUMMARY_TOKENS = int(os.getenv("MAX_SUMMARY_TOKENS", "300"))
+SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "gpt-4o-mini")
 
 # ---------------------------------------------------------------------------
 # Data loading

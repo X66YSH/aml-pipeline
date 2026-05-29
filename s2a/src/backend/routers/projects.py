@@ -72,6 +72,36 @@ def create_project(body: ProjectCreate, db: Session = Depends(get_db)):
     db.add(project)
     db.commit()
     db.refresh(project)
+    
+    # Auto-seed benchmark features for new project
+    from models.feature import Feature
+    from routers.s2f import BENCHMARK_FEATURES, IBM_AML_BENCHMARK_FEATURES, ALL_CHANNEL_KEYS, COMMON_COLUMN_NAMES, IBM_AML_COLUMN_NAMES
+    
+    if project.schema_key == "ibm_aml":
+        features_list = IBM_AML_BENCHMARK_FEATURES
+        channel_keys = ["ibm_aml"]
+        col_names = IBM_AML_COLUMN_NAMES
+    else:
+        features_list = BENCHMARK_FEATURES
+        channel_keys = ALL_CHANNEL_KEYS
+        col_names = COMMON_COLUMN_NAMES
+    
+    for bf in features_list:
+        feature = Feature(
+            name=bf["name"],
+            code=bf["code"],
+            project_id=project.id,
+            description=bf["description"],
+            category=bf["category"],
+            status="validated",
+            source="benchmark",
+        )
+        feature.channels = channel_keys
+        feature.required_columns = col_names
+        db.add(feature)
+    
+    db.commit()
+    
     return project.to_dict()
 
 

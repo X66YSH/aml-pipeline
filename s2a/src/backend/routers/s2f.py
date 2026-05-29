@@ -765,6 +765,7 @@ class PipelineRequest(BaseModel):
     temperature: float = 0.0
     max_corrections: int = 5
     max_feature_retries: int = 2
+    multi_feature: bool = False
     test_size: float = 0.3
     threshold_pct: float = 15.0
 
@@ -779,10 +780,14 @@ async def pipeline_run_endpoint(req: PipelineRequest, db: Session = Depends(get_
 
     async def event_stream():
         try:
-            # If a custom LLM provider is configured, override client-provided model
-            # with the server's DEFAULT_LLM (the one the provider actually supports).
+            # If a custom endpoint is configured AND the UI sent an OpenAI GPT model
+            # (which wouldn't exist on Groq/OpenRouter), fall back to DEFAULT_LLM.
+            # Otherwise, always honour the model the user selected in the UI.
             from config import DEFAULT_LLM, OPENAI_BASE_URL
-            effective_model = DEFAULT_LLM if OPENAI_BASE_URL else req.model
+            if OPENAI_BASE_URL and req.model.startswith("gpt-"):
+                effective_model = DEFAULT_LLM
+            else:
+                effective_model = req.model
             async for event in run_pipeline(
                 regulatory_text=req.regulatory_text,
                 project_id=req.project_id,
@@ -792,6 +797,7 @@ async def pipeline_run_endpoint(req: PipelineRequest, db: Session = Depends(get_
                 temperature=req.temperature,
                 max_corrections=req.max_corrections,
                 max_feature_retries=req.max_feature_retries,
+                multi_feature=req.multi_feature,
                 test_size=req.test_size,
                 threshold_pct=req.threshold_pct,
                 db=db,

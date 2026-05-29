@@ -15,7 +15,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend,
 } from 'recharts';
-import type { ValidationData, TraceEvent, FeatureValidationResult, PRAData, IterationTrace } from '../../api/client';
+import type { ValidationData, TraceEvent, FeatureValidationResult, PRAData, PipelineDecisionRequired, IterationTrace, FeatureGateSummary } from '../../api/client';
 import PRACard from './PRACard';
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -24,23 +24,15 @@ interface Props {
   validationData: ValidationData | null;
   codeHistory: Map<number, string>;
   featureEvalData: FeatureValidationResult | null;
+  allFeatureEvals?: { candidateIndex: number; featureName: string; evalData: any }[];
+  featureGateSummary?: FeatureGateSummary | null;
   traceEvents: TraceEvent[];
   pipelineRunning: boolean;
   agentMessages: { from: string; to: string; message: string }[];
   pra?: PRAData | null;
   iterationHistory: IterationTrace[];
   onJumpToTab?: (tab: string, iteration: number) => void;
-  pendingDecision?: {
-    pipeline_id: string;
-    context: string;
-    errors?: string[];
-    missing_columns?: string[];
-    available_columns?: string[];
-    diagnostic?: { root_cause: string; reasoning: string; recommendation: string };
-    best_iv?: number;
-    best_channel?: string;
-    options: { key: string; label: string; description: string; recommended?: boolean; agent?: string }[];
-  } | null;
+  pendingDecision?: PipelineDecisionRequired | null;
   onDecision?: (pipelineId: string, decision: string) => void;
 }
 
@@ -83,6 +75,8 @@ export default function ValidatorTab({
   validationData,
   codeHistory,
   featureEvalData,
+  allFeatureEvals = [],
+  featureGateSummary,
   traceEvents,
   pipelineRunning,
   agentMessages,
@@ -197,6 +191,50 @@ export default function ValidatorTab({
           </span>
         )}
       </div>
+
+      {/* ── LLM Errors Display ──────────────────────────────────────────────── */}
+      {(() => {
+        const llmErrors = traceEvents.filter(
+          e => e.agent?.includes('Feature Engineer') && e.level === 'error' && 
+          (e.message?.includes('LLM') || e.message?.includes('token') || e.message?.includes('API'))
+        );
+        return llmErrors.length > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-500/10 border border-red-500/30 rounded-xl p-4"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-red-400 mb-2">LLM Error Occurred</h3>
+                <div className="space-y-2">
+                  {llmErrors.map((err, idx) => (
+                    <div key={idx} className="text-xs text-red-300/90 bg-slate-900/30 p-2 rounded border border-red-500/10">
+                      <div className="font-mono text-[11px]">{err.message}</div>
+                    </div>
+                  ))}
+                  <div className="text-xs text-red-300 mt-3 p-2 bg-slate-900/50 rounded border-l-2 border-red-500">
+                    <strong>Possible causes:</strong>
+                    <ul className="list-disc list-inside mt-1 space-y-1">
+                      <li>Token limit exceeded - regulatory text is too long</li>
+                      <li>API rate limit or service unavailable</li>
+                      <li>Model configuration error (check settings)</li>
+                    </ul>
+                    <strong className="block mt-2">Next steps:</strong>
+                    <ul className="list-disc list-inside mt-1">
+                      <li>Try shortening the regulatory text (first 3000 chars often sufficient)</li>
+                      <li>Use <span className="font-mono bg-slate-800 px-1 rounded">Rethink code</span> option to retry with feedback</li>
+                      <li>Check backend logs for detailed error information</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ) : null;
+      })()}
+
 
       {/* ── Validation Results: 2-column grid ───────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -415,10 +453,89 @@ export default function ValidatorTab({
         </div>
       )}
 
+      {/* ── Multi-Feature Gate Results ──────────────────────────────────────── */}
+      {featureGateSummary && (
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-purple-400" />
+            Feature Gate Results
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 ml-1">
+              IV threshold ≥ {featureGateSummary.iv_threshold}
+            </span>
+          </h3>
+          <p className="text-xs text-slate-500 mb-3">
+            {featureGateSummary.n_included} of {featureGateSummary.features.length} feature(s) pass the IV gate and proceed to detection.
+          </p>
+          <div className="space-y-2">
+            {featureGateSummary.features.map((f) => (
+              <div
+                key={f.name}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${
+                  f.included
+                    ? 'bg-emerald-500/5 border-emerald-500/20'
+                    : 'bg-slate-900/50 border-slate-700/30'
+                }`}
+              >
+                {/* Feature name */}
+                <span className={`font-mono text-xs flex-1 truncate ${f.included ? 'text-slate-200' : 'text-slate-500'}`}>
+                  {f.name}
+                </span>
+
+                {/* IV */}
+                <div className="text-right w-24 shrink-0">
+                  <div className="text-[10px] text-slate-600 mb-0.5">IV</div>
+                  <div className={`text-sm font-bold tabular-nums ${
+                    f.best_iv >= 0.3 ? 'text-emerald-400' :
+                    f.best_iv >= 0.1 ? 'text-amber-400' :
+                    f.best_iv >= 0.02 ? 'text-yellow-500' :
+                    'text-red-400'
+                  }`}>
+                    {f.best_iv.toFixed(4)}
+                  </div>
+                </div>
+
+                {/* KS */}
+                <div className="text-right w-24 shrink-0">
+                  <div className="text-[10px] text-slate-600 mb-0.5">KS</div>
+                  <div className={`text-sm font-bold tabular-nums ${
+                    f.best_ks >= 0.3 ? 'text-emerald-400' :
+                    f.best_ks >= 0.1 ? 'text-amber-400' :
+                    'text-slate-400'
+                  }`}>
+                    {f.best_ks.toFixed(4)}
+                  </div>
+                </div>
+
+                {/* Channel */}
+                {f.best_channel && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-400 font-mono shrink-0">
+                    {f.best_channel}
+                  </span>
+                )}
+
+                {/* Include / filter badge */}
+                {f.included ? (
+                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 font-semibold shrink-0">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Included
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-500 border border-slate-600/30 font-semibold shrink-0">
+                    <XCircle className="w-3 h-3" />
+                    Filtered
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Statistical Validation Preview ──────────────────────────────────── */}
       {featureEvalData && (() => {
         // Handle both old flat format and new per-channel format
         const channelResults = (featureEvalData as any).channel_results;
+        const channelErrors = (featureEvalData as any).channel_errors;
         const bestChannel = (featureEvalData as any).best_channel;
         const bestData = channelResults?.[bestChannel] || null;
         // Fall back to flat format fields if they exist
@@ -439,6 +556,20 @@ export default function ValidatorTab({
               </span>
             )}
           </h3>
+
+          {/* Display channel errors if any */}
+          {channelErrors && Object.keys(channelErrors).length > 0 && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <h4 className="text-xs font-semibold text-red-400 mb-2">Evaluation Errors</h4>
+              <div className="space-y-1 text-xs text-red-300/90">
+                {Object.entries(channelErrors).map(([ch, error]: [string, any]) => (
+                  <div key={ch} className="font-mono text-[10px]">
+                    <span className="text-red-500 font-bold">{ch}:</span> {String(error).substring(0, 120)}...
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* KS & IV highlight cards */}
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -595,7 +726,7 @@ export default function ValidatorTab({
             </>
           )}
 
-          {/* Context: feature_not_predictive (IV too low) */}
+          {/* Context: feature_not_predictive (IV too low — single feature) */}
           {pendingDecision.context === 'feature_not_predictive' && (
             <>
               <p className="text-sm text-slate-300">
@@ -618,6 +749,15 @@ export default function ValidatorTab({
                 </div>
               )}
             </>
+          )}
+
+          {/* Context: multi_feature_not_predictive (all compiled features have IV < 0.02) */}
+          {pendingDecision.context === 'multi_feature_not_predictive' && (
+            <p className="text-sm text-slate-300">
+              All {pendingDecision.n_features ?? 'compiled'} feature(s) have no predictive
+              power (best IV = {(pendingDecision.best_iv ?? 0).toFixed(4)}, threshold: 0.02).
+              Choose how to proceed:
+            </p>
           )}
 
           <div className="space-y-2 mt-3">

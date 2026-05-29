@@ -132,10 +132,14 @@ export interface RCCVerdict {
 export interface PipelineDecisionRequired {
   pipeline_id: string;
   context: string;
-  errors: string[];
-  missing_columns: string[];
-  available_columns: string[];
-  options: { key: string; label: string; description: string }[];
+  errors?: string[];
+  missing_columns?: string[];
+  available_columns?: string[];
+  options: { key: string; label: string; description: string; recommended?: boolean; agent?: string }[];
+  best_iv?: number;
+  best_channel?: string;
+  n_features?: number;
+  diagnostic?: { root_cause: string; reasoning: string; recommendation: string };
 }
 
 // ── Pipeline Events ──────────────────────────────────────────────────────────
@@ -351,6 +355,23 @@ export async function validateFeatureStats(body: {
   channels?: string[];
 }): Promise<FeatureValidationResult> {
   return postJSON<FeatureValidationResult>('/feature-validate', body);
+}
+
+// ── Feature Gate (multi-feature IV filter) ───────────────────────────────────
+
+export interface FeatureGateSummaryItem {
+  name: string;
+  best_iv: number;
+  best_ks: number;
+  best_channel: string | null;
+  included: boolean;
+}
+
+export interface FeatureGateSummary {
+  features: FeatureGateSummaryItem[];
+  n_included: number;
+  n_filtered: number;
+  iv_threshold: number;
 }
 
 // ── Detection Lab ─────────────────────────────────────────────────────────────
@@ -571,6 +592,7 @@ export async function pipelineStream(
     max_feature_retries?: number;
     test_size?: number;
     threshold_pct?: number;
+    multi_feature?: boolean;
   },
   onEvent: (evt: CompileSSEEvent) => void,
 ): Promise<void> {
