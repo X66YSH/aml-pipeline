@@ -445,6 +445,7 @@ async def run_pipeline(
                         "best_channel": f.get("best_channel"),
                         "included": f.get("best_iv", 0.0) >= IV_THRESHOLD,
                         "eval_result": f.get("eval_result", {}),
+                        "source": "compiled",
                     }
                     for f in compiled_features
                 ]
@@ -1070,18 +1071,18 @@ Example better approaches:
             Feature.status == "validated",
         ).all()
 
-    features_for_detect = [{"name": f.name, "code": f.code} for f in benchmark_features]
+    features_for_detect = [{"name": f.name, "code": f.code, "source": "benchmark"} for f in benchmark_features]
     feature_ids = [f.id for f in benchmark_features]
 
     if compiled_features:
         for candidate in compiled_features:
-            features_for_detect.append({"name": candidate["name"], "code": candidate["code"]})
+            features_for_detect.append({"name": candidate["name"], "code": candidate["code"], "source": "compiled"})
             if candidate.get("feature_obj"):
                 feature_ids.append(candidate["feature_obj"].id)
 
     # Add compiled feature if available and still not already included
     if feature_code is not None and not compiled_features:
-        features_for_detect.append({"name": feature_name, "code": feature_code})
+        features_for_detect.append({"name": feature_name, "code": feature_code, "source": "compiled"})
         if feature:
             feature_ids.append(feature.id)
 
@@ -1095,14 +1096,14 @@ Example better approaches:
         feature = benchmark_features[0]
         feature_name = feature.name
 
-    detection_models = ["isolation_forest", "local_outlier_factor", "logistic_regression", "random_forest", "xgboost"]
+    detection_models = ["isolation_forest", "local_outlier_factor", "one_class_svm", "k_means", "dbscan"]
     n_benchmark = len(benchmark_features)
     n_compiled = len(compiled_features) if compiled_features else (1 if feature_code else 0)
     yield _agent_message(
         "Detection Strategist", "Pipeline",
         f"Using {n_benchmark} benchmark + {n_compiled} compiled feature(s) = {len(features_for_detect)} total. "
         f"Selected {len(detect_channels)} channel(s): {', '.join(detect_channels)}. "
-        f"Running {len(detection_models)} models: {', '.join(detection_models)}. "
+        f"Running {len(detection_models)} unsupervised models: {', '.join(detection_models)}. "
         f"test_size={test_size}, top-{int(threshold_pct)} flag threshold."
     )
 
@@ -1121,6 +1122,7 @@ Example better approaches:
                 threshold_pct=threshold_pct,
                 db=db,
                 schema_key=schema_key,
+                benchmark_feature_names={f.name for f in benchmark_features},
             )
         )
     except Exception as e:
@@ -1141,7 +1143,7 @@ Example better approaches:
     )
     detection_pra = {
         "perceive": f"Received {len(features_for_detect)} feature(s) across {len(detect_channels)} channel(s). Total accounts: {total_accounts}. Labels: {total_pos} positive.",
-        "reason": f"Running {len(detection_models)} models: 2 unsupervised (Isolation Forest, LOF) + 3 supervised with class-imbalance handling (Logistic Regression, Random Forest, XGBoost with scale_pos_weight). Train/Test split: {int((1-test_size)*100)}/{int(test_size*100)} stratified. Top-{int(threshold_pct)} flag threshold.",
+        "reason": f"Running {len(detection_models)} unsupervised models: Isolation Forest (random partitioning), LOF (local density), One-Class SVM (kernel boundary), K-Means (cluster distance), DBSCAN (density reachability, auto-eps). Train/Test split: {int((1-test_size)*100)}/{int(test_size*100)} stratified. Top-{int(threshold_pct)} flag threshold.",
     }
 
     # Find best model across all channels
@@ -1321,6 +1323,7 @@ Example better approaches:
                         "best_channel": f.get("best_channel"),
                         "included": True,
                         "eval_result": f.get("eval_result", {}),
+                        "source": "compiled",
                     }
                     for f in compiled_features
                 ] if compiled_features else None

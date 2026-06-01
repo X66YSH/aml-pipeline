@@ -406,8 +406,10 @@ export interface DetectChannelResult {
   test_size?: number;
   threshold_percentile?: number;
   feature_names?: string[];
+  benchmark_feature_names?: string[];
   error?: string;
   models: DetectModelResult[];
+  skipped?: boolean;
 }
 
 export interface DetectResponse {

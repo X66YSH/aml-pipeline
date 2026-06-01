@@ -14,7 +14,7 @@ import {
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
-  BarChart, Bar,
+  BarChart, Bar, Cell,
 } from 'recharts';
 import type { DetectResponse, TraceEvent, PRAData } from '../../api/client';
 import PRACard from './PRACard';
@@ -83,15 +83,21 @@ export default function DetectionTab({
     return curves;
   }, [detectResult]);
 
-  // Build feature importance data (from first valid channel/model with importances)
+  // Build feature importance data (from first valid channel/model with importances).
+  // Tags each feature as "benchmark" (pre-defined baseline) or "compiled" (from this run).
   const featureImportanceData = useMemo(() => {
     if (!detectResult) return null;
     for (const [, ch] of Object.entries(detectResult.channels)) {
       for (const m of (ch.models || [])) {
         if (!m.error && m.feature_importances && m.feature_importances.length > 0) {
           const names = ch.feature_names || m.feature_importances.map((_, i) => `feature_${i}`);
+          const benchmarkSet = new Set(ch.benchmark_feature_names || []);
           return m.feature_importances
-            .map((val, i) => ({ name: names[i] || `feature_${i}`, importance: val }))
+            .map((val, i) => ({
+              name: names[i] || `feature_${i}`,
+              importance: val,
+              source: benchmarkSet.has(names[i] || '') ? 'benchmark' : 'compiled',
+            }))
             .sort((a, b) => b.importance - a.importance);
         }
       }
@@ -132,7 +138,7 @@ export default function DetectionTab({
             Running detection models on compatible channels...
           </p>
           <p className="text-xs text-slate-600 mt-1">
-            Training 2 unsupervised + 3 supervised models and computing anomaly scores
+            Running 5 unsupervised models (Isolation Forest, LOF, One-Class SVM, K-Means, DBSCAN) and computing anomaly scores
           </p>
         </div>
       </motion.div>
@@ -486,10 +492,22 @@ export default function DetectionTab({
           {/* Feature Importance */}
           {featureImportanceData && featureImportanceData.length > 0 && (
             <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-purple-400" />
-                Feature Importance
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-purple-400" />
+                  Feature Importance
+                </h3>
+                <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#f59e0b' }} />
+                    Compiled
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#38bdf8' }} />
+                    Benchmark
+                  </span>
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={featureImportanceData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -515,7 +533,14 @@ export default function DetectionTab({
                     itemStyle={{ color: '#e2e8f0' }}
                     formatter={(v: number) => [v.toFixed(4), 'Importance']}
                   />
-                  <Bar dataKey="importance" fill="#a855f7" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="importance" radius={[0, 4, 4, 0]}>
+                    {featureImportanceData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={entry.source === 'benchmark' ? '#38bdf8cc' : '#f59e0bcc'}
+                      />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

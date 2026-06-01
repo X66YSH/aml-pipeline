@@ -1,7 +1,9 @@
 """Detection runner service.
 
-Runs ML models (supervised + unsupervised) on compiled features
-and returns per-channel, per-model evaluation metrics.
+Runs unsupervised ML models on compiled + benchmark features and returns
+per-channel, per-model evaluation metrics. Unsupervised models are used
+because the pipeline analyses unseen typology from new regulatory text —
+no pre-labelled training signal is assumed.
 """
 
 import gc
@@ -10,24 +12,13 @@ import logging
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import (
-    AdaBoostClassifier,
-    GradientBoostingClassifier,
-    IsolationForest,
-    RandomForestClassifier,
-)
-from sklearn.linear_model import LogisticRegression
+from sklearn.cluster import DBSCAN, KMeans
+from sklearn.ensemble import IsolationForest
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC, OneClassSVM
-
-try:
-    from xgboost import XGBClassifier as _XGBClassifier
-    _XGBOOST_AVAILABLE = True
-except ImportError:
-    _XGBOOST_AVAILABLE = False
+from sklearn.svm import OneClassSVM
 
 from config import CHANNEL_DATA_DIR, KYC_TABLES
 from core.data_loader import load_channel_data
@@ -61,16 +52,14 @@ MODEL_MAP = {
     "isolation_forest": ("Isolation Forest", "unsupervised"),
     "local_outlier_factor": ("Local Outlier Factor", "unsupervised"),
     "one_class_svm": ("One-Class SVM", "unsupervised"),
-    "logistic_regression": ("Logistic Regression", "supervised"),
-    "random_forest": ("Random Forest", "supervised"),
-    "gradient_boosting": ("Gradient Boosting", "supervised"),
-    "adaboost": ("AdaBoost", "supervised"),
-    "svm": ("Support Vector Machine", "supervised"),
-    "xgboost": ("XGBoost", "supervised"),
+    "k_means": ("K-Means", "unsupervised"),
+    "dbscan": ("DBSCAN", "unsupervised"),
 }
 
-# Maximum training samples for slow models (SVM is O(n**2 ~ n**3))
+# Maximum training samples for One-Class SVM (O(n^2) kernel)
 SVM_SAMPLE_LIMIT = 5000
+# Maximum training samples for DBSCAN (avoids O(n^2) pairwise and large core-point sets)
+DBSCAN_SAMPLE_LIMIT = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -177,16 +166,13 @@ def _run_models(
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Pre-compute subsampled training set for slow models
-    slow_models = {"one_class_svm", "svm"}
+    # Pre-compute subsampled training set for One-Class SVM (O(n^2) kernel)
     if len(X_train_scaled) > SVM_SAMPLE_LIMIT:
         rng = np.random.RandomState(42)
         idx = rng.choice(len(X_train_scaled), SVM_SAMPLE_LIMIT, replace=False)
         X_train_slow = X_train_scaled[idx]
-        y_train_slow = y_train[idx]
     else:
         X_train_slow = X_train_scaled
-        y_train_slow = y_train
 
     n_total_test = len(y_test)
     n_pos_test = int(y_test.sum())
@@ -211,40 +197,43 @@ def _run_models(
                 clf = OneClassSVM(kernel="rbf", gamma="auto", nu=max(0.01, min(0.5, contamination)))
                 clf.fit(X_train_slow)
                 scores = -clf.decision_function(X_test_scaled)
-            elif model_key == "logistic_regression":
-                clf = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
-                clf.fit(X_train_scaled, y_train)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
-            elif model_key == "random_forest":
-                clf = RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42)
-                clf.fit(X_train_scaled, y_train)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
-            elif model_key == "gradient_boosting":
-                clf = GradientBoostingClassifier(n_estimators=100, random_state=42)
-                clf.fit(X_train_scaled, y_train)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
-            elif model_key == "adaboost":
-                clf = AdaBoostClassifier(n_estimators=100, random_state=42)
-                clf.fit(X_train_scaled, y_train)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
-            elif model_key == "svm":
-                clf = SVC(kernel="rbf", class_weight="balanced", probability=True, random_state=42)
-                clf.fit(X_train_slow, y_train_slow)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
-            elif model_key == "xgboost":
-                if not _XGBOOST_AVAILABLE:
-                    results.append({"key": model_key, "name": model_name, "mode": mode, "error": "xgboost not installed (pip install xgboost)"})
-                    continue
-                scale_pos_weight = float((len(y_train) - y_train.sum()) / max(y_train.sum(), 1))
-                clf = _XGBClassifier(
-                    n_estimators=100,
-                    scale_pos_weight=scale_pos_weight,
-                    random_state=42,
-                    eval_metric="logloss",
-                    verbosity=0,
+            elif model_key == "k_means":
+                n_clusters = min(8, max(2, int(np.sqrt(len(X_train_scaled) / 2))))
+                clf = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                clf.fit(X_train_scaled)
+                # Anomaly score = distance to nearest centroid (higher = more anomalous)
+                dists = np.linalg.norm(
+                    X_test_scaled[:, np.newaxis, :] - clf.cluster_centers_[np.newaxis, :, :],
+                    axis=2,
                 )
-                clf.fit(X_train_scaled, y_train)
-                scores = clf.predict_proba(X_test_scaled)[:, 1]
+                scores = dists.min(axis=1)
+            elif model_key == "dbscan":
+                # Subsample to keep DBSCAN tractable on large channels
+                from sklearn.neighbors import NearestNeighbors as _NNS
+                if len(X_train_scaled) > DBSCAN_SAMPLE_LIMIT:
+                    _rng = np.random.RandomState(42)
+                    _idx = _rng.choice(len(X_train_scaled), DBSCAN_SAMPLE_LIMIT, replace=False)
+                    X_train_db = X_train_scaled[_idx]
+                else:
+                    X_train_db = X_train_scaled
+                # Auto-estimate eps from mean 4-NN distance on the (sub)sample
+                _k = min(4, len(X_train_db) - 1)
+                _nn_eps = _NNS(n_neighbors=_k).fit(X_train_db)
+                _dists_eps, _ = _nn_eps.kneighbors(X_train_db)
+                eps = float(np.mean(_dists_eps[:, -1]))
+                clf = DBSCAN(eps=max(eps, 1e-6), min_samples=4)
+                clf.fit(X_train_db)
+                # Score = distance to nearest core sample via a kNN tree — O(n log n),
+                # not the O(n*n_core) broadcast that caused OOM on large channels.
+                if len(clf.core_sample_indices_) > 0:
+                    core_pts = X_train_db[clf.core_sample_indices_]
+                    _nn_score = _NNS(n_neighbors=1).fit(core_pts)
+                    scores = _nn_score.kneighbors(X_test_scaled)[0].ravel()
+                else:
+                    logging.warning(
+                        "DBSCAN: no core samples found (eps=%.4f) — falling back to max-norm score", eps
+                    )
+                    scores = np.linalg.norm(X_test_scaled, axis=1)
             else:
                 continue
 
@@ -303,12 +292,18 @@ def _run_models(
                     })
                 flagged_customers.sort(key=lambda x: x["anomaly_score"], reverse=True)
 
-            # Feature importances (if available)
+            # Feature importances: Isolation Forest has native scores; K-Means uses
+            # per-feature std of cluster centers (high variance = more discriminative).
             feature_importances = None
             if hasattr(clf, "feature_importances_"):
                 feature_importances = [round(float(v), 4) for v in clf.feature_importances_]
-            elif hasattr(clf, "coef_"):
-                feature_importances = [round(float(abs(v)), 4) for v in clf.coef_[0]]
+            elif model_key == "k_means" and hasattr(clf, "cluster_centers_"):
+                centers_std = np.std(clf.cluster_centers_, axis=0)
+                total = float(centers_std.sum())
+                feature_importances = [
+                    round(float(v) / total, 4) if total > 0 else 0.0
+                    for v in centers_std
+                ]
 
             results.append({
                 "key": model_key,
@@ -354,6 +349,7 @@ def run_detection(
     feature_compatible_channels: dict[str, set[str]] | None = None,
     db=None,
     schema_key: str = "fintrac",
+    benchmark_feature_names: set[str] | None = None,
 ) -> dict:
     """Run the detection pipeline across channels and models.
 
@@ -395,6 +391,7 @@ def run_detection(
             threshold_pct=threshold_pct,
             random_state=random_state,
             db=db,
+            benchmark_feature_names=benchmark_feature_names,
         )
 
     labels_path = CHANNEL_DATA_DIR / KYC_TABLES["labels"]["file"]
@@ -448,6 +445,7 @@ def run_detection(
             "test_size": test_size,
             "threshold_percentile": threshold_pct,
             "feature_names": feat_cols,
+            "benchmark_feature_names": sorted(benchmark_feature_names or []),
             "models": model_results,
         }
 
@@ -573,6 +571,7 @@ def _run_detection_ibm_aml(
     threshold_pct: float = 95.0,
     random_state: int = 42,
     db=None,
+    benchmark_feature_names: set[str] | None = None,
 ) -> dict:
     """Run detection on IBM AML dataset — single 'ibm_aml' channel."""
     from config import IBM_AML_TRANS_PATH
@@ -662,6 +661,7 @@ def _run_detection_ibm_aml(
             "test_size": test_size,
             "threshold_percentile": threshold_pct,
             "feature_names": feat_cols,
+            "benchmark_feature_names": sorted(benchmark_feature_names or []),
             "models": model_results,
         }
 

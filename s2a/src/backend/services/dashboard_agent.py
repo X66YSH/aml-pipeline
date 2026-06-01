@@ -126,8 +126,12 @@ def collect_pipeline_snapshot(
             "kind": "bar",
             "label": "Feature IV ranking",
             "points": [
-                {"name": f["name"], "value": round(f.get("best_iv", 0.0), 4),
-                 "included": f.get("included", False)}
+                {
+                    "name": f["name"],
+                    "value": round(f.get("best_iv", 0.0), 4),
+                    "included": f.get("included", False),
+                    "source": f.get("source", "compiled"),
+                }
                 for f in feat_sorted
             ],
         }
