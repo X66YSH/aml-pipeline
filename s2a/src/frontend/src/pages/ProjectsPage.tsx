@@ -97,7 +97,7 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--color-bg)]">
+    <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-10">
         {/* Header */}
         <motion.div

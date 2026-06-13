@@ -595,7 +595,7 @@ export default function ProjectDetailPage() {
 
   if (loadingProject) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
       </div>
     );
@@ -603,7 +603,7 @@ export default function ProjectDetailPage() {
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <p className="text-slate-300 text-lg">Project not found</p>
@@ -623,9 +623,9 @@ export default function ProjectDetailPage() {
   // =========================================================================
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
+    <div className="min-h-screen">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-40">
+      <div className="border-b border-[var(--color-border)] glass sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">

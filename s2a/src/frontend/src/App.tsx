@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
+import AuroraBackground from './components/layout/AuroraBackground';
+import CursorSpotlight from './components/layout/CursorSpotlight';
 import HomePage from './pages/HomePage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
@@ -9,9 +11,11 @@ import SettingsPage from './pages/SettingsPage';
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="h-screen w-screen flex overflow-hidden">
+      <AuroraBackground />
+      <CursorSpotlight />
+      <div className="relative z-10 h-screen w-screen flex overflow-hidden">
         <Sidebar />
-        <main className="flex-1 min-w-0 bg-[var(--color-bg)] overflow-y-auto">
+        <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/projects" element={<ProjectsPage />} />

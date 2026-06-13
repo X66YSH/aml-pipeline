@@ -46,17 +46,30 @@ const CRIME_COLORS_DARK: Record<string, string> = {
   CSAM:      'from-slate-500/20 to-slate-900/10 border-slate-500/30 text-slate-300',
 };
 
-// Light mode — dark text on soft pastel backgrounds for high contrast
+// Light mode — uniform white cards, color reserved for the category badge only
 const CRIME_COLORS_LIGHT: Record<string, string> = {
-  ML:        'from-purple-100 to-purple-50 border-purple-300 text-purple-800',
-  HT:        'from-red-100 to-red-50 border-red-300 text-red-800',
-  TF:        'from-amber-100 to-amber-50 border-amber-300 text-amber-900',  // amber needs -900 for contrast
-  Drugs:     'from-emerald-100 to-emerald-50 border-emerald-300 text-emerald-800',
-  Tax:       'from-blue-100 to-blue-50 border-blue-300 text-blue-800',
-  Fraud:     'from-orange-100 to-orange-50 border-orange-300 text-orange-800',
-  Sanctions: 'from-rose-100 to-rose-50 border-rose-300 text-rose-800',
-  Wildlife:  'from-green-100 to-green-50 border-green-300 text-green-800',
-  CSAM:      'from-slate-100 to-slate-50 border-slate-300 text-slate-700',
+  ML:        'from-white to-white border-zinc-200 text-zinc-900',
+  HT:        'from-white to-white border-zinc-200 text-zinc-900',
+  TF:        'from-white to-white border-zinc-200 text-zinc-900',
+  Drugs:     'from-white to-white border-zinc-200 text-zinc-900',
+  Tax:       'from-white to-white border-zinc-200 text-zinc-900',
+  Fraud:     'from-white to-white border-zinc-200 text-zinc-900',
+  Sanctions: 'from-white to-white border-zinc-200 text-zinc-900',
+  Wildlife:  'from-white to-white border-zinc-200 text-zinc-900',
+  CSAM:      'from-white to-white border-zinc-200 text-zinc-900',
+};
+
+// Light mode — colored badge for the category code in top-right of each card
+const CRIME_BADGE_LIGHT: Record<string, string> = {
+  ML:        'text-purple-600',
+  HT:        'text-red-600',
+  TF:        'text-amber-700',
+  Drugs:     'text-emerald-600',
+  Tax:       'text-blue-600',
+  Fraud:     'text-orange-600',
+  Sanctions: 'text-rose-600',
+  Wildlife:  'text-green-600',
+  CSAM:      'text-zinc-500',
 };
 
 export default function HomePage() {
@@ -132,7 +145,10 @@ export default function HomePage() {
           transition={{ duration: 0.5 }}
           className="text-center mb-12"
         >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs mb-6">
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-6
+            ${theme === 'light'
+              ? 'bg-purple-50 border border-purple-200 text-purple-700'
+              : 'bg-purple-500/10 border border-purple-500/20 text-purple-300'}`}>
             <Sparkles className="w-3.5 h-3.5" />
             Signal-to-Action AML Platform
           </div>
@@ -178,15 +194,18 @@ export default function HomePage() {
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center
-                  group-hover:from-purple-900/40 group-hover:to-indigo-900/40 transition-all duration-300">
-                  <FileUp className="w-7 h-7 text-slate-400 group-hover:text-purple-400 transition-colors" />
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300
+                  ${theme === 'light'
+                    ? 'bg-zinc-100 group-hover:bg-purple-100'
+                    : 'bg-gradient-to-br from-slate-700 to-slate-800 group-hover:from-purple-900/40 group-hover:to-indigo-900/40'}`}>
+                  <FileUp className={`w-7 h-7 transition-colors
+                    ${theme === 'light' ? 'text-zinc-500 group-hover:text-purple-600' : 'text-slate-400 group-hover:text-purple-400'}`} />
                 </div>
                 <div>
-                  <p className="text-slate-300 text-lg">
-                    Drag & drop a <span className="text-purple-300 font-medium">regulatory PDF</span> here
+                  <p className={`text-lg ${theme === 'light' ? 'text-zinc-700' : 'text-slate-300'}`}>
+                    Drag & drop a <span className={`font-medium ${theme === 'light' ? 'text-purple-700' : 'text-purple-300'}`}>regulatory PDF</span> here
                   </p>
-                  <p className="text-slate-500 text-sm mt-1">or click to browse · PDF up to 50MB</p>
+                  <p className={`text-sm mt-1 ${theme === 'light' ? 'text-zinc-500' : 'text-slate-500'}`}>or click to browse · PDF up to 50MB</p>
                 </div>
               </div>
             )}
@@ -282,9 +301,9 @@ export default function HomePage() {
                   `}
                 >
                   <div className="flex items-start justify-between">
-                    <FileText className="w-4 h-4 mt-0.5 opacity-60" />
-                    <span className={`text-[10px] uppercase tracking-wider
-                      ${theme === 'light' ? 'opacity-70 font-semibold' : 'opacity-60'}`}>
+                    <FileText className={`w-4 h-4 mt-0.5 ${theme === 'light' ? `${CRIME_BADGE_LIGHT[init.crime_type] || 'text-zinc-500'} opacity-90` : 'opacity-60'}`} />
+                    <span className={`text-[10px] uppercase tracking-wider font-semibold
+                      ${theme === 'light' ? CRIME_BADGE_LIGHT[init.crime_type] || 'text-zinc-500' : 'opacity-60'}`}>
                       {init.crime_type}
                     </span>
                   </div>
