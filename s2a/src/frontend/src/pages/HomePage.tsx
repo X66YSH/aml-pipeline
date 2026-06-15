@@ -15,6 +15,7 @@ import {
   Zap,
   BarChart3,
   Database,
+  FolderTree,
 } from 'lucide-react';
 import { uploadPDF, fetchJSON } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
@@ -135,47 +136,59 @@ export default function HomePage() {
     }
   };
 
+  // Track cursor inside a card to drive the radial spotlight glow
+  const handleCardMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty('--card-x', `${e.clientX - r.left}px`);
+    e.currentTarget.style.setProperty('--card-y', `${e.clientY - r.top}px`);
+  };
+
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-7xl mx-auto px-8 py-10">
         {/* Hero */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-12"
+          transition={{ duration: 0.4 }}
+          className="mb-10"
         >
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-6
-            ${theme === 'light'
-              ? 'bg-purple-50 border border-purple-200 text-purple-700'
-              : 'bg-purple-500/10 border border-purple-500/20 text-purple-300'}`}>
-            <Sparkles className="w-3.5 h-3.5" />
-            Signal-to-Action AML Platform
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-medium uppercase tracking-[0.18em] text-purple-300/80">Signal-to-Action AML Platform</span>
           </div>
-          <h1 className="text-4xl font-bold text-white mb-3 tracking-tight">
-            Transform Regulatory Text into
-            <span className="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent"> Detection Code</span>
+          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-br from-purple-300 via-indigo-300 to-sky-300 bg-clip-text text-transparent">
+            Transform Regulatory Text into Detection Code
           </h1>
-          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+          <p className="text-slate-400 text-sm mt-2 max-w-2xl leading-relaxed">
             Upload a FINTRAC operational alert or regulatory PDF. Our multi-agent pipeline will extract indicators
             and generate executable AML feature code.
           </p>
         </motion.div>
 
+        {/* Upload + Initiatives — two-column layout to fill horizontal space */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-12 items-start">
+
         {/* PDF Drop Zone */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="mb-10"
+          transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+          className="lg:col-span-2"
         >
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500/25 to-indigo-500/10 border border-purple-400/25 flex items-center justify-center">
+              <FileUp className="w-3.5 h-3.5 text-purple-300" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Upload document</span>
+          </div>
           <div
             {...getRootProps()}
             className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer
               transition-all duration-300 group
               ${isDragActive
                 ? 'border-purple-400 bg-purple-500/10 scale-[1.01]'
-                : 'border-slate-700 bg-slate-900/40 hover:border-slate-500 hover:bg-slate-800/30'
+                : 'border-slate-700 bg-slate-900/40 hover:border-purple-500/40 hover:bg-slate-800/30'
               }
               ${isUploading ? 'pointer-events-none opacity-60' : ''}
             `}
@@ -230,15 +243,15 @@ export default function HomePage() {
                 animate={{ opacity: 1, y: 0, height: 'auto' }}
                 exit={{ opacity: 0, y: -10, height: 0 }}
                 transition={{ duration: 0.3 }}
-                className="mt-4 bg-slate-900/60 border border-slate-700/50 rounded-2xl p-5 space-y-4"
+                className="mt-4 glass-card p-5 space-y-4 overflow-hidden"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/10 border border-emerald-400/25 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-300" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">{extractedDoc.filename}</h3>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-white truncate">{extractedDoc.filename}</h3>
                       <p className="text-xs text-slate-400">
                         {extractedDoc.pages} pages · {(extractedDoc.size_bytes / 1024).toFixed(0)} KB · {extractedDoc.text.length.toLocaleString()} chars extracted
                       </p>
@@ -246,8 +259,7 @@ export default function HomePage() {
                   </div>
                   <button
                     onClick={handleGoToPipeline}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white
-                      text-sm font-medium rounded-xl transition-colors"
+                    className="btn btn-primary flex-shrink-0"
                   >
                     Compile Features
                     <ArrowRight className="w-4 h-4" />
@@ -268,20 +280,20 @@ export default function HomePage() {
           </AnimatePresence>
         </motion.div>
 
-        {/* Divider */}
-        <div className="flex items-center gap-4 mb-8">
-          <div className="flex-1 h-px bg-slate-800" />
-          <span className="text-xs text-slate-500 uppercase tracking-wider">or select a FINTRAC initiative</span>
-          <div className="flex-1 h-px bg-slate-800" />
-        </div>
-
         {/* Initiative grid */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="grid grid-cols-3 gap-3 mb-12"
+          transition={{ duration: 0.4, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="lg:col-span-3"
         >
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500/25 to-cyan-500/10 border border-sky-400/25 flex items-center justify-center">
+              <FolderTree className="w-3.5 h-3.5 text-sky-300" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Or select a FINTRAC initiative</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {loadingInitiatives
             ? Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="h-20 bg-slate-800/30 rounded-xl animate-pulse" />
@@ -313,71 +325,94 @@ export default function HomePage() {
                   </div>
                 </motion.button>
               ))}
+          </div>
+        </motion.div>
+
+        </div>{/* end two-column layout */}
+
+        {/* Capabilities section */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="flex items-center gap-2 mb-5"
+        >
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/25 to-orange-500/10 border border-amber-400/25 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+          </div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Platform capabilities</span>
         </motion.div>
 
         {/* Feature cards */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="grid grid-cols-3 gap-4 mb-10"
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 mb-10">
           {[
             {
               icon: Workflow,
               title: 'Multi-Agent Pipeline',
               description: 'Perceive → Reason → Act with automatic self-correction and validation.',
-              color: 'text-purple-400',
-              bg: 'bg-purple-500/10',
+              color: 'text-purple-300',
+              tile: 'from-purple-500/25 to-indigo-500/10 border-purple-400/25',
+              glow: 'rgba(139, 92, 246, 0.20)',
             },
             {
               icon: Shield,
               title: '6-Stage Validation',
               description: 'AST analysis, security scanning, execution testing, and quality checks.',
-              color: 'text-emerald-400',
-              bg: 'bg-emerald-500/10',
+              color: 'text-emerald-300',
+              tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25',
+              glow: 'rgba(16, 185, 129, 0.20)',
             },
             {
               icon: Zap,
               title: 'Instant Execution',
               description: 'Run generated features on real transaction data with live statistics.',
-              color: 'text-sky-400',
-              bg: 'bg-sky-500/10',
+              color: 'text-sky-300',
+              tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25',
+              glow: 'rgba(56, 189, 248, 0.20)',
             },
             {
               icon: FileText,
               title: 'PDF Extraction',
               description: 'Drag and drop regulatory PDFs for automatic text extraction.',
-              color: 'text-amber-400',
-              bg: 'bg-amber-500/10',
+              color: 'text-amber-300',
+              tile: 'from-amber-500/25 to-orange-500/10 border-amber-400/25',
+              glow: 'rgba(245, 158, 11, 0.20)',
             },
             {
               icon: BarChart3,
               title: 'Feature Analytics',
               description: 'Histograms, percentiles, and distribution analysis for every feature.',
-              color: 'text-indigo-400',
-              bg: 'bg-indigo-500/10',
+              color: 'text-indigo-300',
+              tile: 'from-indigo-500/25 to-purple-500/10 border-indigo-400/25',
+              glow: 'rgba(99, 102, 241, 0.20)',
             },
             {
               icon: Database,
               title: '7 Transaction Channels',
               description: 'Card, EFT, EMT, Cheque, ABM, Wire, and Western Union data support.',
-              color: 'text-rose-400',
-              bg: 'bg-rose-500/10',
+              color: 'text-rose-300',
+              tile: 'from-rose-500/25 to-red-500/10 border-rose-400/25',
+              glow: 'rgba(244, 63, 94, 0.20)',
             },
-          ].map(({ icon: Icon, title, description, color, bg }) => (
-            <div
+          ].map(({ icon: Icon, title, description, color, tile, glow }, i) => (
+            <motion.div
               key={title}
-              className="p-5 rounded-xl bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/60 transition-colors"
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.25 + i * 0.06, ease: [0.16, 1, 0.3, 1] }}
+              onMouseMove={handleCardMouse}
+              style={{ ['--card-glow' as string]: glow }}
+              className="group glass-card spotlight-card p-6"
             >
-              <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center mb-3`}>
-                <Icon className={`w-4.5 h-4.5 ${color}`} />
+              <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${tile} border flex items-center justify-center mb-4
+                group-hover:scale-105 transition-transform duration-300`}>
+                <Icon className={`w-5 h-5 ${color}`} />
               </div>
-              <h3 className="text-sm font-semibold text-white mb-1">{title}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">{description}</p>
-            </div>
+              <h3 className="text-base font-semibold text-white mb-1.5 leading-snug">{title}</h3>
+              <p className="text-[13px] text-slate-400 leading-relaxed">{description}</p>
+            </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </div>
   );

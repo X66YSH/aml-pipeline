@@ -604,7 +604,7 @@ function CompactCard({
         <div className="flex items-center mx-1 shrink-0">
           <motion.div
             className="w-5 h-px"
-            style={{ background: phase.status !== 'idle' ? cm.ring : '#334155' }}
+            style={{ background: phase.status !== 'idle' ? cm.ring : 'var(--diagram-line)' }}
             animate={phase.status === 'done' ? { opacity: [0.6, 1, 0.6] } : {}}
             transition={{ duration: 2, repeat: Infinity }}
           />
@@ -613,7 +613,7 @@ function CompactCard({
             style={{
               borderTop: '3px solid transparent',
               borderBottom: '3px solid transparent',
-              borderLeft: `5px solid ${phase.status !== 'idle' ? cm.ring : '#334155'}`,
+              borderLeft: `5px solid ${phase.status !== 'idle' ? cm.ring : 'var(--diagram-line)'}`,
             }}
           />
         </div>

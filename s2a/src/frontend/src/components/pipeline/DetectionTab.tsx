@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import type { DetectResponse, TraceEvent, PRAData } from '../../api/client';
 import PRACard from './PRACard';
+import { useTheme } from '../../hooks/useTheme';
 
 // ── Color palette for channels ───────────────────────────────────────────────
 
@@ -50,6 +51,17 @@ export default function DetectionTab({
   pipelineRunning,
   pra,
 }: Props) {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
+  const chart = {
+    grid:          isLight ? '#e5e7eb' : '#1e293b',
+    axis:          isLight ? '#94a3b8' : '#475569',
+    tooltipBg:     isLight ? '#ffffff' : '#0f172a',
+    tooltipBorder: isLight ? '#e5e7eb' : '#334155',
+    tooltipText:   isLight ? '#1e293b' : '#e2e8f0',
+    tooltipLabel:  isLight ? '#64748b' : '#94a3b8',
+  };
+
   // Extract the Detection Strategist's reasoning
   const strategistMessages = useMemo(() => {
     return agentMessages.filter(
@@ -427,11 +439,12 @@ export default function DetectionTab({
               </h3>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis
                     dataKey="fpr"
                     type="number"
                     domain={[0, 1]}
+                    stroke={chart.axis}
                     tick={{ fill: '#94a3b8', fontSize: 10 }}
                     label={{ value: 'FPR', position: 'bottom', fill: '#64748b', fontSize: 10 }}
                   />
@@ -439,6 +452,7 @@ export default function DetectionTab({
                     dataKey="tpr"
                     type="number"
                     domain={[0, 1]}
+                    stroke={chart.axis}
                     tick={{ fill: '#94a3b8', fontSize: 10 }}
                     label={{
                       value: 'TPR',
@@ -450,14 +464,14 @@ export default function DetectionTab({
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
+                      backgroundColor: chart.tooltipBg,
+                      border: `1px solid ${chart.tooltipBorder}`,
                       borderRadius: '8px',
                       fontSize: '11px',
-                      color: '#e2e8f0',
+                      color: chart.tooltipText,
                     }}
-                    labelStyle={{ color: '#94a3b8' }}
-                    itemStyle={{ color: '#e2e8f0' }}
+                    labelStyle={{ color: chart.tooltipLabel }}
+                    itemStyle={{ color: chart.tooltipText }}
                   />
                   <Legend wrapperStyle={{ fontSize: '10px' }} />
                   {/* Diagonal reference */}
@@ -467,7 +481,7 @@ export default function DetectionTab({
                       { fpr: 1, tpr: 1 },
                     ]}
                     dataKey="tpr"
-                    stroke="#334155"
+                    stroke={chart.axis}
                     strokeDasharray="4 4"
                     dot={false}
                     name="Random"
@@ -510,27 +524,29 @@ export default function DetectionTab({
               </div>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={featureImportanceData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis
                     type="number"
+                    stroke={chart.axis}
                     tick={{ fill: '#94a3b8', fontSize: 10 }}
                   />
                   <YAxis
                     dataKey="name"
                     type="category"
                     width={120}
+                    stroke={chart.axis}
                     tick={{ fill: '#94a3b8', fontSize: 10 }}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
+                      backgroundColor: chart.tooltipBg,
+                      border: `1px solid ${chart.tooltipBorder}`,
                       borderRadius: '8px',
                       fontSize: '12px',
-                      color: '#e2e8f0',
+                      color: chart.tooltipText,
                     }}
-                    labelStyle={{ color: '#94a3b8' }}
-                    itemStyle={{ color: '#e2e8f0' }}
+                    labelStyle={{ color: chart.tooltipLabel }}
+                    itemStyle={{ color: chart.tooltipText }}
                     formatter={(v: number) => [v.toFixed(4), 'Importance']}
                   />
                   <Bar dataKey="importance" radius={[0, 4, 4, 0]}>

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  Search,
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -55,6 +56,34 @@ export default function Sidebar() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Command palette trigger */}
+      <div className="px-2 pt-3">
+        <button
+          onClick={() => window.dispatchEvent(new Event('open-command-palette'))}
+          title="Search — ⌘K"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border transition-all duration-200 group
+            ${theme === 'light'
+              ? 'text-zinc-500 hover:text-zinc-800 bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
+              : 'text-slate-400 hover:text-slate-100 bg-white/[0.03] hover:bg-white/[0.06] border-white/10'}`}
+        >
+          <Search className="w-[18px] h-[18px] shrink-0 transition-transform group-hover:scale-110" />
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.div
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 overflow-hidden flex-1"
+              >
+                <span className="text-sm whitespace-nowrap">Search</span>
+                <kbd className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-current/20 opacity-60 whitespace-nowrap">⌘K</kbd>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </button>
       </div>
 
       {/* Navigation */}
