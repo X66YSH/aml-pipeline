@@ -76,7 +76,7 @@ export default function FeatureStatsPanel({ stats, histogram, loading, error }: 
               <XAxis dataKey="bin" hide />
               <YAxis hide />
               <Tooltip
-                contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 10 }}
+                contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 6, fontSize: 10, color: 'var(--chart-tooltip-text)' }}
                 labelStyle={{ color: '#94a3b8' }}
                 itemStyle={{ color: '#38bdf8' }}
               />

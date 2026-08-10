@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Layers, Plus, Trash2, X, Loader2,
   CheckCircle2, Code2, Copy, Check,
-  Upload, Eye, Edit2, AlertCircle,
+  Upload, Eye, Edit2, AlertCircle, FolderOpen, Database, Activity,
 } from 'lucide-react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-python';
@@ -26,6 +26,7 @@ import type {
   DashboardBundle, FeatureGateSummary,
 } from '../api/client';
 import { useSettings } from '../hooks/useSettings';
+import CountUp from '../components/ui/CountUp';
 import FeatureEditorModal from '../components/s2f/FeatureEditorModal';
 import FeatureLibrary from '../components/pipeline/FeatureLibrary';
 import PipelineTabBar from '../components/pipeline/PipelineTabBar';
@@ -208,6 +209,27 @@ export default function ProjectDetailPage() {
   const [alerts, setAlerts] = useState<AlertRecord[]>([]);
   const [alertStats, setAlertStats] = useState<AlertStats | null>(null);
   const [explainingAlertId, setExplainingAlertId] = useState<string | null>(null);
+
+  // Collapse the hero + stats strip on scroll, keeping the tab bar pinned
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  useEffect(() => {
+    const sc = document.querySelector('main');
+    if (!sc) return;
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        // hysteresis so it doesn't flicker right at the threshold
+        setHeaderCollapsed((prev) => (prev ? sc.scrollTop > 40 : sc.scrollTop > 88));
+      });
+    };
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => {
+      sc.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   // ── Load project & features ───────────────────────────────────────────────
 
@@ -591,30 +613,62 @@ export default function ProjectDetailPage() {
     }
   }, [inputText, id, project, settings, useMultiFeature, selectedChannels, loadFeatures, loadAlerts]);
 
+  // ── Spotlight cursor tracking for hoverable cards ─────────────────────────
+  const handleCardMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty('--card-x', `${e.clientX - r.left}px`);
+    e.currentTarget.style.setProperty('--card-y', `${e.clientY - r.top}px`);
+  };
+
+  // ── Per-schema accent identity (mirrors ProjectsPage) ─────────────────────
+  const schemaAccent = (key: string) =>
+    key === 'ibm_aml'
+      ? {
+          label: 'IBM AML',
+          icon: 'text-sky-300',
+          tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25',
+          badge: 'bg-sky-500/15 text-sky-300 border-sky-400/25',
+          glow: 'rgba(56, 189, 248, 0.20)',
+        }
+      : {
+          label: 'FINTRAC',
+          icon: 'text-emerald-300',
+          tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25',
+          badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/25',
+          glow: 'rgba(16, 185, 129, 0.20)',
+        };
+
   // ── Loading state ─────────────────────────────────────────────────────────
 
   if (loadingProject) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="w-8 h-8 text-purple-400 animate-spin mb-3" />
+        <p className="text-slate-400 text-sm">Loading project...</p>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <p className="text-slate-300 text-lg">Project not found</p>
-          <button
-            onClick={() => navigate('/projects')}
-            className="mt-4 text-sm text-purple-400 hover:text-purple-300"
-          >
-            Back to Projects
-          </button>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="min-h-screen flex flex-col items-center justify-center"
+      >
+        <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5">
+          <AlertCircle className="w-9 h-9 text-red-400" />
         </div>
-      </div>
+        <h2 className="text-xl font-semibold text-white mb-2">Project not found</h2>
+        <p className="text-slate-400 text-sm mb-6 max-w-sm text-center">
+          This project may have been deleted or the link is no longer valid.
+        </p>
+        <button onClick={() => navigate('/projects')} className="btn btn-glass">
+          <ArrowLeft className="w-4 h-4" />
+          Back to Projects
+        </button>
+      </motion.div>
     );
   }
 
@@ -622,27 +676,60 @@ export default function ProjectDetailPage() {
   // RENDER
   // =========================================================================
 
+  const accent = schemaAccent(project.schemaKey);
+  const validatedCount = features.filter((f) => f.status === 'validated').length;
+  const headerStats: Array<{ label: string; value: string; num?: number; icon: typeof Layers; accent: string; tile: string }> = [
+    { label: 'Features', value: String(features.length), num: features.length, icon: Layers, accent: 'text-sky-300', tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25' },
+    { label: 'Validated', value: String(validatedCount), num: validatedCount, icon: CheckCircle2, accent: 'text-emerald-300', tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25' },
+    { label: 'Schema', value: accent.label, icon: Database, accent: accent.icon, tile: accent.tile },
+    { label: 'Pipeline', value: pipelineRunning ? 'Running' : pipelinePhase === 'done' ? 'Complete' : 'Idle', icon: Activity, accent: 'text-amber-300', tile: 'from-amber-500/25 to-orange-500/10 border-amber-400/25' },
+  ];
+
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
+    <div className="min-h-screen">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+      <div className="border-b border-[var(--color-border)] glass sticky top-0 z-40">
+        <div className={`max-w-7xl mx-auto px-8 transition-[padding] duration-300 ${headerCollapsed ? 'py-3' : 'py-6'}`}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="flex items-start justify-between gap-6"
+          >
+            <div className="min-w-0">
               <button
                 onClick={() => navigate('/projects')}
-                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                className={`group inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.18em] text-purple-300/80 hover:text-purple-200 transition-all duration-300 overflow-hidden ${
+                  headerCollapsed ? 'max-h-0 opacity-0 mb-0' : 'max-h-6 opacity-100 mb-2.5'
+                }`}
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
+                Projects
               </button>
-              <div>
-                <h1 className="text-xl font-bold text-white">{project.name}</h1>
-                {project.description && (
-                  <p className="text-xs text-slate-500 mt-0.5">{project.description}</p>
-                )}
+              <div className="flex items-center gap-3.5">
+                <div className={`rounded-xl bg-gradient-to-br ${accent.tile} border flex items-center justify-center flex-shrink-0 shadow-inner transition-all duration-300 ${
+                  headerCollapsed ? 'w-9 h-9' : 'w-12 h-12'
+                }`}>
+                  <FolderOpen className={`${accent.icon} transition-all duration-300 ${headerCollapsed ? 'w-[18px] h-[18px]' : 'w-6 h-6'}`} />
+                </div>
+                <div className="min-w-0">
+                  <h1 className={`font-bold tracking-tight bg-gradient-to-br from-purple-300 via-indigo-300 to-sky-300 bg-clip-text text-transparent truncate transition-all duration-300 ${
+                    headerCollapsed ? 'text-2xl' : 'text-4xl'
+                  }`}>
+                    {project.name}
+                  </h1>
+                  <div className={`flex items-center gap-2 transition-all duration-300 ${headerCollapsed ? 'mt-0.5' : 'mt-1.5'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${accent.badge}`}>
+                      {accent.label}
+                    </span>
+                    {project.description && !headerCollapsed && (
+                      <p className="text-xs text-slate-500 truncate">{project.description}</p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 flex-shrink-0">
               {/* PDF upload */}
               <input
                 ref={fileInputRef}
@@ -654,26 +741,53 @@ export default function ProjectDetailPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingPDF || pipelineRunning}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
-                           bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors
-                           disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-glass disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {uploadingPDF ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Upload className="w-3 h-3" />
+                  <Upload className="w-4 h-4" />
                 )}
                 Upload PDF
               </button>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <Layers className="w-3.5 h-3.5" />
-                {features.length} feature{features.length !== 1 ? 's' : ''}
-              </div>
             </div>
-          </div>
+          </motion.div>
+
+          {/* ── Stats overview strip ────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: headerCollapsed ? 0 : 1,
+              height: headerCollapsed ? 0 : 'auto',
+              marginTop: headerCollapsed ? 0 : 20,
+            }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="grid grid-cols-2 lg:grid-cols-4 gap-3 overflow-hidden"
+          >
+            {headerStats.map((s, i) => (
+              <motion.div
+                key={s.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                className="glass-card spotlight-card p-3.5 flex items-center gap-3"
+                onMouseMove={handleCardMouse}
+              >
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${s.tile} border flex items-center justify-center flex-shrink-0`}>
+                  <s.icon className={`w-5 h-5 ${s.accent}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-white tracking-tight truncate">
+                    {s.num !== undefined ? <CountUp value={s.num} /> : s.value}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{s.label}</div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
 
           {/* ── Pipeline Tab Bar ────────────────────────────────────────────── */}
-          <div className="mt-4 -mb-px">
+          <div className={`-mb-px transition-[margin] duration-300 ${headerCollapsed ? 'mt-3' : 'mt-5'}`}>
             <PipelineTabBar
               activeTab={activeTab}
               pipelinePhase={pipelinePhase}
@@ -704,7 +818,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* ── Tab content ─────────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-7xl mx-auto px-8 py-8">
         <AnimatePresence mode="wait">
           {activeTab === 'analyst' && (
             <motion.div key="analyst" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -726,15 +840,18 @@ export default function ProjectDetailPage() {
               {/* ── Feature Library ────────────────────────────────────────── */}
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-slate-400" />
-                    Features ({features.length})
-                  </h2>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/25 to-indigo-500/10 border border-purple-400/25 flex items-center justify-center">
+                      <Layers className="w-4 h-4 text-purple-300" />
+                    </div>
+                    <h2 className="text-base font-semibold text-white">
+                      Features
+                      <span className="ml-2 text-sm font-normal text-slate-500">{features.length}</span>
+                    </h2>
+                  </div>
                   <button
                     onClick={() => { setEditingFeature(null); setShowFeatureEditor(true); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                               bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30
-                               transition-colors"
+                    className="btn btn-glass text-xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     New Feature

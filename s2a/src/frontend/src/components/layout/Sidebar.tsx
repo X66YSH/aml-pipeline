@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  Search,
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,11 +32,12 @@ export default function Sidebar() {
       initial={false}
       animate={{ width: collapsed ? 64 : 220 }}
       transition={{ duration: 0.2, ease: 'easeInOut' }}
-      className="h-screen flex flex-col bg-[var(--color-bg-sidebar)] border-r border-slate-800/60 relative z-20"
+      className="h-screen flex flex-col glass-strong border-r border-[var(--color-border)] relative z-20"
+      style={{ borderRadius: 0 }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800/60 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-[var(--color-border-subtle)] shrink-0">
+        <div className="relative glow-ring w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500 via-indigo-500 to-sky-500 flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/30">
           <Shield className="w-4 h-4 text-white" />
         </div>
         <AnimatePresence>
@@ -47,11 +49,41 @@ export default function Sidebar() {
               transition={{ duration: 0.15 }}
               className="overflow-hidden"
             >
-              <h1 className="text-sm font-bold text-white tracking-tight whitespace-nowrap">S2A Platform</h1>
+              <h1 className="text-sm font-bold tracking-tight whitespace-nowrap text-gradient">
+                S2A Platform
+              </h1>
               <p className="text-[10px] text-slate-500 whitespace-nowrap">Signal-to-Action</p>
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Command palette trigger */}
+      <div className="px-2 pt-3">
+        <button
+          onClick={() => window.dispatchEvent(new Event('open-command-palette'))}
+          title="Search — ⌘K"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border transition-all duration-200 group
+            ${theme === 'light'
+              ? 'text-zinc-500 hover:text-zinc-800 bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
+              : 'text-slate-400 hover:text-slate-100 bg-white/[0.03] hover:bg-white/[0.06] border-white/10'}`}
+        >
+          <Search className="w-[18px] h-[18px] shrink-0 transition-transform group-hover:scale-110" />
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.div
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 overflow-hidden flex-1"
+              >
+                <span className="text-sm whitespace-nowrap">Search</span>
+                <kbd className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-current/20 opacity-60 whitespace-nowrap">⌘K</kbd>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </button>
       </div>
 
       {/* Navigation */}
@@ -67,14 +99,25 @@ export default function Sidebar() {
               to={to}
               end={false}
               className={
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group
+                `relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group overflow-hidden
                 ${isActive
-                  ? 'bg-purple-500/15 text-purple-300 border border-purple-500/20'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  ? theme === 'light'
+                    ? 'text-purple-700 bg-purple-50 border border-purple-200 shadow-[0_4px_12px_-4px_rgba(139,92,246,0.18)]'
+                    : 'text-white bg-gradient-to-r from-purple-500/25 via-indigo-500/15 to-transparent border border-purple-500/30 shadow-[0_6px_20px_-8px_rgba(139,92,246,0.6)]'
+                  : theme === 'light'
+                    ? 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 border border-transparent'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04] border border-transparent hover:border-white/10'
                 }`
               }
             >
-              <Icon className="w-[18px] h-[18px] shrink-0" />
+              {isActive && (
+                <motion.span
+                  layoutId="nav-active-bar"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-gradient-to-b from-purple-400 to-sky-400 shadow-[0_0_12px_rgba(139,92,246,0.8)]"
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                />
+              )}
+              <Icon className={`w-[18px] h-[18px] shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'drop-shadow-[0_0_6px_rgba(139,92,246,0.7)]' : ''}`} />
               <AnimatePresence>
                 {!collapsed && (
                   <motion.div
@@ -97,12 +140,12 @@ export default function Sidebar() {
       </nav>
 
       {/* Theme toggle + Version badge */}
-      <div className="px-3 py-3 border-t border-slate-800/60 shrink-0 space-y-2">
+      <div className="px-3 py-3 border-t border-[var(--color-border-subtle)] shrink-0 space-y-2">
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-2 w-full px-2 py-2 rounded-lg text-slate-400 hover:text-white
-                     hover:bg-slate-800/50 transition-colors"
+          className={`btn btn-glass w-full !justify-start !px-2 !py-2 !rounded-lg text-xs
+            ${theme === 'light' ? 'text-zinc-600 hover:!text-zinc-900' : 'text-slate-400 hover:!text-white'}`}
           title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
           {theme === 'dark' ? (
@@ -117,7 +160,7 @@ export default function Sidebar() {
                 animate={{ opacity: 1, width: 'auto' }}
                 exit={{ opacity: 0, width: 0 }}
                 transition={{ duration: 0.15 }}
-                className="text-xs whitespace-nowrap overflow-hidden"
+                className="whitespace-nowrap overflow-hidden"
               >
                 {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
               </motion.span>
@@ -132,9 +175,9 @@ export default function Sidebar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 px-2"
             >
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <div className="w-2 h-2 rounded-full bg-emerald-500 breathe" />
               <span className="text-[10px] text-slate-500">V2 — Research Platform</span>
             </motion.div>
           ) : (
@@ -144,7 +187,7 @@ export default function Sidebar() {
               exit={{ opacity: 0 }}
               className="flex justify-center"
             >
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <div className="w-2 h-2 rounded-full bg-emerald-500 breathe" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -153,9 +196,9 @@ export default function Sidebar() {
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 w-6 h-6 bg-slate-800 border border-slate-700 rounded-full
-          flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700
-          transition-colors z-30"
+        className="absolute -right-3 top-20 w-6 h-6 glass rounded-full
+          flex items-center justify-center text-slate-400 hover:text-white
+          hover:border-purple-400/50 transition-all z-30 hover:scale-110"
       >
         {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
       </button>

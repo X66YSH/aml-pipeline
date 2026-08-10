@@ -174,7 +174,7 @@ export default function PipelineTabBar({
                     layoutId="pipelineActiveTab"
                     className="absolute -bottom-px left-3 right-3 h-0.5 rounded-full"
                     style={{
-                      background: status === 'idle' ? '#475569' : tab.ring,
+                      background: status === 'idle' ? 'var(--diagram-idle)' : tab.ring,
                     }}
                   />
                 )}
@@ -186,7 +186,7 @@ export default function PipelineTabBar({
                   <motion.div
                     className="w-5 h-px"
                     style={{
-                      background: status === 'done' ? tab.ring : '#334155',
+                      background: status === 'done' ? tab.ring : 'var(--diagram-line)',
                     }}
                     animate={status === 'done' ? { opacity: [0.5, 1, 0.5] } : {}}
                     transition={{ duration: 2, repeat: Infinity }}
@@ -196,7 +196,7 @@ export default function PipelineTabBar({
                     style={{
                       borderTop: '3px solid transparent',
                       borderBottom: '3px solid transparent',
-                      borderLeft: `5px solid ${status === 'done' ? tab.ring : '#334155'}`,
+                      borderLeft: `5px solid ${status === 'done' ? tab.ring : 'var(--diagram-line)'}`,
                     }}
                   />
                 </div>

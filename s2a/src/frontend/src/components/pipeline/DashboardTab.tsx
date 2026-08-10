@@ -7,7 +7,7 @@
 
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { LayoutDashboard, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Loader2, Sparkles, Clock } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -26,6 +26,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DashboardBundle } from '../../api/client';
 import PRACard from './PRACard';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Props {
   bundle: DashboardBundle | null;
@@ -64,6 +65,23 @@ function kpiTextColor(id: string, raw: unknown): string {
   if (id === 'best_auc') return v >= 0.85 ? 'text-emerald-300' : v >= 0.70 ? 'text-amber-300' : 'text-red-300';
   if (id === 'best_iv')  return v >= 0.10 ? 'text-emerald-300' : v >= 0.02 ? 'text-amber-300' : 'text-red-300';
   return 'text-slate-300';
+}
+
+// Per-KPI accent identity — gives each metric tile a distinct gradient icon tile,
+// cycling through the brand palette (purple → sky → emerald → amber → red).
+const KPI_ACCENTS = [
+  { accent: 'text-purple-300', tile: 'from-purple-500/25 to-indigo-500/10 border-purple-400/25' },
+  { accent: 'text-sky-300', tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25' },
+  { accent: 'text-emerald-300', tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25' },
+  { accent: 'text-amber-300', tile: 'from-amber-500/25 to-orange-500/10 border-amber-400/25' },
+  { accent: 'text-red-300', tile: 'from-red-500/25 to-rose-500/10 border-red-400/25' },
+];
+
+// Track cursor inside a card to drive the radial spotlight glow
+function handleCardMouse(e: React.MouseEvent<HTMLDivElement>) {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty('--card-x', `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty('--card-y', `${e.clientY - r.top}px`);
 }
 
 function barFill(id: string, value: unknown): string {
@@ -117,22 +135,32 @@ export default function DashboardTab({ bundle, pipelineRunning }: Props) {
 
   if (!bundle && pipelineRunning) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-slate-500 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
-        <p className="text-sm">Dashboard Builder is caching results and designing layout…</p>
+      <div className="flex flex-col items-center justify-center py-28 text-slate-400 gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/25 to-purple-500/10 border border-indigo-400/25 flex items-center justify-center">
+          <Loader2 className="w-7 h-7 animate-spin text-indigo-300" />
+        </div>
+        <p className="text-sm text-slate-400">Dashboard Builder is caching results and designing layout…</p>
       </div>
     );
   }
 
   if (!bundle) {
     return (
-      <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-10 text-center">
-        <LayoutDashboard className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="glass-card p-12 text-center"
+      >
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10 border border-indigo-400/25 flex items-center justify-center mx-auto mb-5">
+          <LayoutDashboard className="w-9 h-9 text-indigo-300" />
+        </div>
+        <h2 className="text-lg font-semibold text-white mb-2">No dashboard yet</h2>
         <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
           Run the full pipeline on this project. When the run finishes, the Dashboard Builder caches metrics,
           model curves, and evaluation tables, then composes a layout tailored to this run.
         </p>
-      </div>
+      </motion.div>
     );
   }
 
@@ -146,20 +174,37 @@ export default function DashboardTab({ bundle, pipelineRunning }: Props) {
       exit={{ opacity: 0, y: -12 }}
       className="space-y-6"
     >
-      <div className="rounded-xl border border-indigo-500/25 bg-gradient-to-br from-indigo-950/40 to-slate-900/60 p-6">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30">
-            <LayoutDashboard className="w-5 h-5 text-indigo-300" />
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="glass-card spotlight-card p-6 overflow-hidden"
+        onMouseMove={handleCardMouse}
+        style={{ ['--card-glow' as string]: 'rgba(99, 102, 241, 0.20)' }}
+      >
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-400 via-indigo-400 to-sky-400 opacity-80" />
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/25 to-purple-500/10 border border-indigo-400/25 flex items-center justify-center flex-shrink-0 shadow-inner">
+            <LayoutDashboard className="w-6 h-6 text-indigo-300" />
           </div>
-          <div>
-            <h2 className="text-lg font-semibold text-white tracking-tight">{title}</h2>
-            {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-purple-300/80">Run dashboard</span>
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-br from-purple-300 via-indigo-300 to-sky-300 bg-clip-text text-transparent">
+              {title}
+            </h2>
+            {subtitle && <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">{subtitle}</p>}
             {bundle.updated_at && (
-              <p className="text-[10px] text-slate-600 mt-2 font-mono">Updated {bundle.updated_at}</p>
+              <div className="flex items-center gap-1.5 mt-3 text-[11px] text-slate-500 font-mono">
+                <Clock className="w-3 h-3" />
+                <span>Updated {bundle.updated_at}</span>
+              </div>
             )}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {bundle.pra && (
         <PRACard
@@ -188,9 +233,9 @@ export default function DashboardTab({ bundle, pipelineRunning }: Props) {
           return (
             <motion.div
               key={idx}
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.06 }}
+              transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
               className="min-w-0"
               style={{ gridColumn: `span ${span} / span ${span}` }}
             >
@@ -214,13 +259,17 @@ export default function DashboardTab({ bundle, pipelineRunning }: Props) {
 
 function WidgetFrame({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <div className="h-full rounded-xl border border-slate-700/50 bg-slate-900/50 overflow-hidden flex flex-col">
+    <div
+      className="glass-card spotlight-card h-full overflow-hidden flex flex-col"
+      onMouseMove={handleCardMouse}
+    >
       {title && (
-        <div className="px-4 py-2 border-b border-slate-800/80 text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-700/40 text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+          <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex-shrink-0" />
           {title}
         </div>
       )}
-      <div className="p-4 flex-1 min-h-[120px]">{children}</div>
+      <div className="p-5 flex-1 min-h-[120px]">{children}</div>
     </div>
   );
 }
@@ -248,6 +297,17 @@ function DashboardWidget({
   metricById: Map<string, MetricRow>;
   bestAuc: number | null;
 }) {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
+  const chart = {
+    grid:          isLight ? '#e5e7eb' : '#1e293b',
+    axis:          isLight ? '#94a3b8' : '#475569',
+    tooltipBg:     isLight ? '#ffffff' : '#0f172a',
+    tooltipBorder: isLight ? '#e5e7eb' : '#334155',
+    tooltipText:   isLight ? '#1e293b' : '#e2e8f0',
+    tooltipLabel:  isLight ? '#64748b' : '#94a3b8',
+  };
+
   const seriesCat = (material?.series_catalog || {}) as Record<string, { points?: unknown[]; kind?: string; label?: string }>;
   const tables = (material?.tables || {}) as Record<string, { columns?: string[]; rows?: Record<string, unknown>[] }>;
   const confusionMatrix = material?.confusion_matrix as { tp: number; fp: number; fn: number; tn: number; model_name?: string } | null | undefined;
@@ -258,19 +318,28 @@ function DashboardWidget({
     const ids = (w.metric_ids as string[]) || [];
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {ids.map((id) => {
+        {ids.map((id, i) => {
           const m = metricById.get(id);
           const textClass = m ? kpiTextColor(id, m.value) : 'text-indigo-200';
+          const ac = KPI_ACCENTS[i % KPI_ACCENTS.length];
           return (
-            <div
+            <motion.div
               key={id}
-              className="rounded-lg border border-slate-700/60 bg-slate-950/50 px-3 py-3 text-center"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+              className="rounded-xl border border-slate-700/50 bg-slate-950/40 p-4 flex flex-col gap-2.5"
             >
-              <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">{m?.label || id}</div>
-              <div className={`text-lg font-mono font-semibold ${textClass}`}>
-                {m ? formatMetricValue(m) : '—'}
+              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${ac.tile} border flex items-center justify-center flex-shrink-0`}>
+                <span className={`text-sm font-bold ${ac.accent}`}>{(m?.label || id).trim().charAt(0).toUpperCase()}</span>
               </div>
-            </div>
+              <div className="min-w-0">
+                <div className={`text-2xl font-mono font-semibold tracking-tight ${textClass}`}>
+                  {m ? formatMetricValue(m) : '—'}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mt-0.5 truncate">{m?.label || id}</div>
+              </div>
+            </motion.div>
           );
         })}
       </div>
@@ -354,22 +423,24 @@ function DashboardWidget({
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={pts} layout="vertical" margin={{ top: 4, right: 40, bottom: 4, left: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
               <XAxis
                 type="number"
                 domain={[0, 'auto']}
+                stroke={chart.axis}
                 tick={{ fontSize: 10, fill: '#94a3b8' }}
               />
               <YAxis
                 type="category"
                 dataKey={xKey}
+                stroke={chart.axis}
                 tick={{ fontSize: 9, fill: '#94a3b8' }}
                 width={labelWidth}
               />
               <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11, color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-                itemStyle={{ color: '#e2e8f0' }}
+                contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 8, fontSize: 11, color: chart.tooltipText }}
+                labelStyle={{ color: chart.tooltipLabel }}
+                itemStyle={{ color: chart.tooltipText }}
               />
               {isIvChart && (
                 <ReferenceLine x={0.02} stroke="#f59e0b80" strokeDasharray="4 3" strokeWidth={1.2}>
@@ -391,19 +462,20 @@ function DashboardWidget({
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={pts} margin={{ top: 4, right: 8, bottom: isWoe ? 28 : 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis
               dataKey={xKey}
+              stroke={chart.axis}
               tick={{ fontSize: isWoe ? 8 : 10, fill: '#94a3b8' }}
               angle={isWoe ? -25 : 0}
               textAnchor={isWoe ? 'end' : 'middle'}
               interval={0}
             />
-            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} domain={isWoe ? ['auto', 'auto'] : [0, 'auto']} />
+            <YAxis stroke={chart.axis} tick={{ fontSize: 10, fill: '#94a3b8' }} domain={isWoe ? ['auto', 'auto'] : [0, 'auto']} />
             <Tooltip
-              contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11, color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-                itemStyle={{ color: '#e2e8f0' }}
+              contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 8, fontSize: 11, color: chart.tooltipText }}
+                labelStyle={{ color: chart.tooltipLabel }}
+                itemStyle={{ color: chart.tooltipText }}
             />
             {isIvChart && (
               <ReferenceLine y={0.02} stroke="#f59e0b80" strokeDasharray="4 3" strokeWidth={1.2}>
@@ -411,7 +483,7 @@ function DashboardWidget({
               </ReferenceLine>
             )}
             {isWoe && (
-              <ReferenceLine y={0} stroke="#475569" strokeWidth={1} />
+              <ReferenceLine y={0} stroke={chart.axis} strokeWidth={1} />
             )}
             <Bar dataKey={yKey} radius={[3, 3, 0, 0]}>
               {pts.map((pt, i) => (
@@ -444,29 +516,31 @@ function DashboardWidget({
         )}
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={pts} margin={{ top: 4, right: 8, bottom: 20, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis
               dataKey="fpr"
               type="number"
               domain={[0, 1]}
+              stroke={chart.axis}
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               label={{ value: 'False Positive Rate', position: 'insideBottom', offset: -12, fontSize: 10, fill: '#64748b' }}
             />
             <YAxis
               domain={[0, 1]}
+              stroke={chart.axis}
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               label={{ value: 'True Positive Rate', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: '#64748b' }}
             />
             <Tooltip
-              contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11, color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-                itemStyle={{ color: '#e2e8f0' }}
+              contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 8, fontSize: 11, color: chart.tooltipText }}
+                labelStyle={{ color: chart.tooltipLabel }}
+                itemStyle={{ color: chart.tooltipText }}
             />
             {/* Random classifier baseline */}
             {isRoc && (
               <ReferenceLine
                 segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]}
-                stroke="#475569"
+                stroke={chart.axis}
                 strokeDasharray="4 3"
                 strokeWidth={1}
               />

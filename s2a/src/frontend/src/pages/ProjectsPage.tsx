@@ -1,18 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, FolderOpen, Trash2, X, Layers, Clock, Loader2, FileText } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, X, Layers, Clock, Loader2, FileText, Database, Sparkles, Activity } from 'lucide-react';
 import { listProjects, createProject, deleteProject } from '../api/client';
 import type { ProjectRecord } from '../api/client';
+import CountUp from '../components/ui/CountUp';
+import { SkeletonGrid, SkeletonStat } from '../components/ui/Skeleton';
+import { useToast } from '../components/ui/Toast';
+import Tooltip from '../components/ui/Tooltip';
 
 interface LocationState {
   regulatoryText?: string;
   source?: string;
+  openNew?: boolean;
 }
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
   const locationState = location.state as LocationState | null;
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,18 +52,30 @@ export default function ProjectsPage() {
     fetchProjects();
   }, [fetchProjects]);
 
+  // Opened from the command palette "New project" action
+  useEffect(() => {
+    if (locationState?.openNew) {
+      setShowModal(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationState?.openNew]);
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await createProject({ name: newName.trim(), description: newDescription.trim() || undefined, schema_key: newSchema });
+      const created = await createProject({ name: newName.trim(), description: newDescription.trim() || undefined, schema_key: newSchema });
       setShowModal(false);
       setNewName('');
       setNewDescription('');
       setNewSchema('fintrac');
       await fetchProjects();
+      toast.success('Project created', created.name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create project');
+      const msg = e instanceof Error ? e.message : 'Failed to create project';
+      setError(msg);
+      toast.error('Could not create project', msg);
     } finally {
       setCreating(false);
     }
@@ -66,12 +84,16 @@ export default function ProjectsPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
+    const name = deleteTarget.name;
     try {
       await deleteProject(deleteTarget.id);
       setDeleteTarget(null);
       await fetchProjects();
+      toast.success('Project deleted', name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete project');
+      const msg = e instanceof Error ? e.message : 'Failed to delete project';
+      setError(msg);
+      toast.error('Could not delete project', msg);
     } finally {
       setDeleting(false);
     }
@@ -96,33 +118,107 @@ export default function ProjectsPage() {
     return formatDate(iso);
   };
 
+  // Per-schema accent identity — carries color from icon → top bar → badge → glow
+  const schemaAccent = (key: string) =>
+    key === 'ibm_aml'
+      ? {
+          label: 'IBM AML',
+          icon: 'text-sky-300',
+          tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25',
+          bar: 'from-sky-400 via-cyan-400 to-sky-500',
+          badge: 'bg-sky-500/15 text-sky-300 border-sky-400/25',
+          glow: 'rgba(56, 189, 248, 0.20)',
+        }
+      : {
+          label: 'FINTRAC',
+          icon: 'text-emerald-300',
+          tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25',
+          bar: 'from-emerald-400 via-teal-400 to-emerald-500',
+          badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/25',
+          glow: 'rgba(16, 185, 129, 0.20)',
+        };
+
+  // Track cursor inside a card to drive the radial spotlight glow
+  const handleCardMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty('--card-x', `${e.clientX - r.left}px`);
+    e.currentTarget.style.setProperty('--card-y', `${e.clientY - r.top}px`);
+  };
+
+  // Aggregate overview metrics for the stats strip
+  const totalFeatures = projects.reduce((sum, p) => sum + p.featureCount, 0);
+  const schemaCount = new Set(projects.map((p) => p.schemaKey)).size;
+  const lastActivity = projects.length
+    ? formatRelative(projects.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b)).updatedAt)
+    : '—';
+
+  const stats: Array<{ label: string; value: string; num?: number; icon: typeof FolderOpen; accent: string; tile: string }> = [
+    { label: 'Projects', value: String(projects.length), num: projects.length, icon: FolderOpen, accent: 'text-purple-300', tile: 'from-purple-500/25 to-indigo-500/10 border-purple-400/25' },
+    { label: 'Features', value: String(totalFeatures), num: totalFeatures, icon: Layers, accent: 'text-sky-300', tile: 'from-sky-500/25 to-cyan-500/10 border-sky-400/25' },
+    { label: 'Schemas', value: String(schemaCount), num: schemaCount, icon: Database, accent: 'text-emerald-300', tile: 'from-emerald-500/25 to-teal-500/10 border-emerald-400/25' },
+    { label: 'Last activity', value: lastActivity, icon: Activity, accent: 'text-amber-300', tile: 'from-amber-500/25 to-orange-500/10 border-amber-400/25' },
+  ];
+
   return (
-    <div className="h-full overflow-y-auto bg-[var(--color-bg)]">
-      <div className="max-w-6xl mx-auto px-6 py-10">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-7xl mx-auto px-8 py-10">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="flex items-center justify-between mb-8"
+          className="flex items-end justify-between mb-8"
         >
           <div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">Projects</h1>
-            <p className="text-slate-400 text-sm mt-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span className="text-xs font-medium uppercase tracking-[0.18em] text-purple-300/80">Workspace</span>
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-br from-purple-300 via-indigo-300 to-sky-300 bg-clip-text text-transparent">
+              Projects
+            </h1>
+            <p className="text-slate-400 text-sm mt-2 max-w-md">
               {projects.length > 0
-                ? `${projects.length} project${projects.length === 1 ? '' : 's'}`
-                : 'Organize your AML features into projects'}
+                ? 'Organize AML features, detection rules, and pipeline runs into focused workspaces.'
+                : 'Organize your AML features into projects.'}
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-500
-              text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-purple-900/30"
-          >
+          <button onClick={() => setShowModal(true)} className="btn btn-primary">
             <Plus className="w-4 h-4" />
             New Project
           </button>
         </motion.div>
+
+        {/* Stats overview strip */}
+        {!loading && projects.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.05 }}
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+          >
+            {stats.map((s, i) => (
+              <motion.div
+                key={s.label}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.1 + i * 0.05 }}
+                className="glass-card spotlight-card p-4 flex items-center gap-3.5"
+                onMouseMove={handleCardMouse}
+              >
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${s.tile} border flex items-center justify-center flex-shrink-0`}>
+                  <s.icon className={`w-5 h-5 ${s.accent}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl font-semibold text-white tracking-tight truncate">
+                    {s.num !== undefined ? <CountUp value={s.num} /> : s.value}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{s.label}</div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
 
         {/* Incoming regulatory text banner */}
         {locationState?.regulatoryText && (
@@ -161,12 +257,14 @@ export default function ProjectsPage() {
           )}
         </AnimatePresence>
 
-        {/* Loading state */}
+        {/* Loading state — skeleton stats + grid */}
         {loading && (
-          <div className="flex flex-col items-center justify-center py-32">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin mb-3" />
-            <p className="text-slate-400 text-sm">Loading projects...</p>
-          </div>
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonStat key={i} />)}
+            </div>
+            <SkeletonGrid count={6} />
+          </>
         )}
 
         {/* Empty state */}
@@ -201,76 +299,102 @@ export default function ProjectsPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"
           >
-            {projects.map((project, i) => (
+            {projects.map((project, i) => {
+              const accent = schemaAccent(project.schemaKey);
+              return (
               <motion.div
                 key={project.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.06 }}
+                transition={{ duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                 onClick={() => navigate(`/projects/${project.id}`, {
                   state: locationState?.regulatoryText ? { regulatoryText: locationState.regulatoryText, source: locationState.source } : undefined
                 })}
-                className="group relative bg-slate-800/50 border border-slate-700/50 rounded-xl p-5
-                  cursor-pointer hover:border-purple-500/40 hover:bg-slate-800/70
-                  transition-all duration-200 hover:shadow-lg hover:shadow-purple-900/10"
+                onMouseMove={handleCardMouse}
+                style={{ ['--card-glow' as string]: accent.glow }}
+                className="group glass-card spotlight-card cursor-pointer p-6 pt-7 overflow-hidden"
               >
+                {/* Accent top bar — reveals on hover */}
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${accent.bar}
+                  opacity-60 group-hover:opacity-100 transition-opacity duration-300`} />
+
                 {/* Delete button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteTarget(project);
-                  }}
-                  className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-600
-                    opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400
-                    transition-all duration-200"
-                  title="Delete project"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="absolute top-3.5 right-3.5 z-10">
+                  <Tooltip label="Delete project" side="left">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(project);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-600
+                        opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400
+                        transition-all duration-200"
+                      aria-label="Delete project"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                </div>
 
                 {/* Project icon + name */}
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20
-                    flex items-center justify-center flex-shrink-0">
-                    <FolderOpen className="w-5 h-5 text-purple-400" />
+                <div className="flex items-start gap-3.5 mb-4">
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${accent.tile} border
+                    flex items-center justify-center flex-shrink-0 shadow-inner
+                    group-hover:scale-105 transition-transform duration-300`}>
+                    <FolderOpen className={`w-6 h-6 ${accent.icon}`} />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-white truncate pr-6">{project.name}</h3>
-                    {project.description && (
-                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
-                        {project.description}
-                      </p>
-                    )}
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <h3 className="text-base font-semibold text-white truncate pr-6 leading-snug">{project.name}</h3>
+                    <span className={`inline-block mt-1.5 text-[10px] px-2 py-0.5 rounded-full font-medium border ${accent.badge}`}>
+                      {accent.label}
+                    </span>
                   </div>
                 </div>
 
+                {/* Description */}
+                <p className="text-[13px] text-slate-400 line-clamp-2 leading-relaxed mb-5 min-h-[2.4em]">
+                  {project.description || 'No description provided.'}
+                </p>
+
                 {/* Metadata row */}
-                <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-700/40">
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
-                    project.schemaKey === 'ibm_aml'
-                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  }`}>
-                    {project.schemaKey === 'ibm_aml' ? 'IBM AML' : 'FINTRAC'}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>
-                      {project.featureCount} feature{project.featureCount === 1 ? '' : 's'}
-                    </span>
+                <div className="flex items-center gap-4 pt-4 border-t border-slate-700/40">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <Layers className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="font-medium text-slate-300">{project.featureCount}</span>
+                    <span>feature{project.featureCount === 1 ? '' : 's'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
                     <Clock className="w-3.5 h-3.5" />
                     <span>{formatRelative(project.updatedAt)}</span>
                   </div>
-                  <div className="ml-auto text-[10px] text-slate-600">
+                  <div className="ml-auto text-[10px] text-slate-600 font-mono">
                     {formatDate(project.createdAt)}
                   </div>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
+
+            {/* Ghost "new project" tile — invites action and fills the grid */}
+            <motion.button
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: projects.length * 0.06, ease: [0.16, 1, 0.3, 1] }}
+              onClick={() => setShowModal(true)}
+              className="group flex flex-col items-center justify-center gap-3 min-h-[200px] rounded-2xl
+                border border-dashed border-slate-700/60 text-slate-500
+                hover:border-purple-500/40 hover:text-purple-300 hover:bg-purple-500/[0.03]
+                transition-all duration-300"
+            >
+              <div className="w-12 h-12 rounded-xl border border-dashed border-slate-700/60
+                group-hover:border-purple-500/40 flex items-center justify-center
+                group-hover:scale-110 transition-all duration-300">
+                <Plus className="w-6 h-6" />
+              </div>
+              <span className="text-sm font-medium">New project</span>
+            </motion.button>
           </motion.div>
         )}
       </div>
